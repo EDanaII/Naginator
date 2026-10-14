@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.EDanaII.pillreminder.ui.theme.PillReminderTheme
@@ -21,7 +22,9 @@ import androidx.compose.material3.Button
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
+import androidx.activity.compose.BackHandler
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,20 +44,46 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val reminderViewModel = ViewModelProvider(this)[ReminderViewModel::class.java]
         setContent {
             PillReminderTheme {
-                var showAddScreen by remember { mutableStateOf(false) }
+                var showAddScreen by rememberSaveable { mutableStateOf(false) }
+                val reminders by reminderViewModel.reminders.collectAsStateWithLifecycle()
+                val isSaving by reminderViewModel.isSaving.collectAsStateWithLifecycle()
+                val saveError by reminderViewModel.saveError.collectAsStateWithLifecycle()
+                val loadError by reminderViewModel.loadError.collectAsStateWithLifecycle()
+                val saveCompleted by reminderViewModel.saveCompleted.collectAsStateWithLifecycle()
+                LaunchedEffect(saveCompleted) {
+                    if (saveCompleted) {
+                        showAddScreen = false
+                        reminderViewModel.consumeSaveCompleted()
+                    }
+                }
+
+                BackHandler(enabled = showAddScreen) {
+                    if (!isSaving) showAddScreen = false
+                }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     if (showAddScreen) {
                         AddReminderScreen(
                             modifier = Modifier.padding(innerPadding),
-                            onBack = { showAddScreen = false }
+                            onBack = { showAddScreen = false },
+                            onSave = { reminder ->
+                                reminderViewModel.saveReminder(reminder)
+                            },
+                            isSaving = isSaving,
+                            saveError = saveError
                         )
                     } else {
                         ReminderListScreen(
                             modifier = Modifier.padding(innerPadding),
-                            onAdd = { showAddScreen = true }
+                            onAdd = {
+                                reminderViewModel.clearSaveError()
+                                showAddScreen = true
+                            },
+                            reminders = reminders,
+                            loadError = loadError
                         )
                     }
                 }
@@ -66,10 +95,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ReminderListScreen(
     modifier: Modifier = Modifier,
-    onAdd: () -> Unit = {}
+    onAdd: () -> Unit = {},
+    reminders: List<Reminder> = emptyList(),
+    loadError: String? = null
 ) {
     Column(
-        modifier = modifier.padding(16.dp)
+        modifier = modifier.fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
     ) {
         Text(
             text = "Pill Reminder",
@@ -82,16 +115,27 @@ fun ReminderListScreen(
             Text("Add Reminder")
         }
 
-        Text(
-            text = "No reminders configured"
-        )
+        if (loadError != null) {
+            Text(loadError, color = MaterialTheme.colorScheme.error)
+        } else if (reminders.isEmpty()) {
+            Text("No reminders configured")
+        } else {
+            reminders.forEach { reminder ->
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(reminder.name, style = MaterialTheme.typography.titleMedium)
+                Text(reminder.instructions, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
     }
 }
 
 @Composable
 fun AddReminderScreen(
     modifier: Modifier = Modifier,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSave: (Reminder) -> Unit,
+    isSaving: Boolean = false,
+    saveError: String? = null
 ) {
     var reminderName by rememberSaveable {
         mutableStateOf("")
@@ -247,22 +291,33 @@ fun AddReminderScreen(
             }
         }
 
-        Button(onClick = onBack) {
+        Button(onClick = onBack, enabled = !isSaving) {
             Text("Back")
         }
 
         Button(
             onClick = {
-                // Saving comes next
+                onSave(
+                    Reminder(
+                        name = reminderName.trim(),
+                        instructions = medicationInstructions.trim(),
+                        startTimeMillis = startTimeMillis,
+                        doseIntervalHours = doseIntervalHours.toInt(),
+                        nagIntervalMinutes = nagIntervalMinutes.toInt()
+                    )
+                )
             },
-            enabled = reminderName.isNotBlank() &&
+            enabled = !isSaving && reminderName.isNotBlank() &&
                     medicationInstructions.isNotBlank() &&
                     (doseIntervalHours.toIntOrNull() ?: 0) > 0 &&
                     (nagIntervalMinutes.toIntOrNull() ?: 0) > 0
         ) {
-            Text("Save Reminder")
+            Text(if (isSaving) "Saving…" else "Save Reminder")
         }
 
+        if (saveError != null) {
+            Text(saveError, color = MaterialTheme.colorScheme.error)
+        }
         Spacer(modifier = Modifier.height(8.dp))
     }
 }

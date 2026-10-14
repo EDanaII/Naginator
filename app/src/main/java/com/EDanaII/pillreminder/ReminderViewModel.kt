@@ -20,6 +20,8 @@ class ReminderViewModel(application: Application) : AndroidViewModel(application
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
     private val _saveError = MutableStateFlow<String?>(null)
     val saveError: StateFlow<String?> = _saveError.asStateFlow()
+    private val _maintenanceError = MutableStateFlow<String?>(null)
+    val maintenanceError: StateFlow<String?> = _maintenanceError.asStateFlow()
     private val _loadError = MutableStateFlow<String?>(null)
     val loadError: StateFlow<String?> = _loadError.asStateFlow()
 
@@ -29,6 +31,35 @@ class ReminderViewModel(application: Application) : AndroidViewModel(application
 
     fun clearSaveError() {
         _saveError.value = null
+    }
+
+    fun deleteReminder(id: Long) {
+        maintainReminder("Unable to delete reminder. Please try again.") {
+            check(dao.delete(id) == 1)
+        }
+    }
+
+    fun setReminderEnabled(id: Long, enabled: Boolean) {
+        maintainReminder("Unable to change reminder state. Please try again.") {
+            check(dao.setEnabled(id, enabled) == 1)
+        }
+    }
+
+    private fun maintainReminder(errorMessage: String, operation: suspend () -> Unit) {
+        if (_isSaving.value) return
+        _isSaving.value = true
+        _maintenanceError.value = null
+        viewModelScope.launch {
+            try {
+                operation()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _maintenanceError.value = errorMessage
+            } finally {
+                _isSaving.value = false
+            }
+        }
     }
 
     fun consumeSaveCompleted() {
@@ -41,7 +72,14 @@ class ReminderViewModel(application: Application) : AndroidViewModel(application
         _saveError.value = null
         viewModelScope.launch {
             try {
-                dao.insert(reminder)
+                if (reminder.id == 0L) {
+                    dao.insert(reminder)
+                } else {
+                    check(dao.update(
+                        reminder.id, reminder.name, reminder.instructions, reminder.startTimeMillis,
+                        reminder.doseIntervalHours, reminder.nagIntervalMinutes, reminder.enabled
+                    ) == 1)
+                }
                 _saveCompleted.value = true
             } catch (cancelled: CancellationException) {
                 throw cancelled

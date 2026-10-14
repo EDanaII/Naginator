@@ -19,6 +19,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
+import androidx.compose.runtime.key
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -48,42 +53,73 @@ class MainActivity : ComponentActivity() {
         setContent {
             PillReminderTheme {
                 var showAddScreen by rememberSaveable { mutableStateOf(false) }
+                var editingId by rememberSaveable { mutableStateOf<Long?>(null) }
                 val reminders by reminderViewModel.reminders.collectAsStateWithLifecycle()
                 val isSaving by reminderViewModel.isSaving.collectAsStateWithLifecycle()
                 val saveError by reminderViewModel.saveError.collectAsStateWithLifecycle()
                 val loadError by reminderViewModel.loadError.collectAsStateWithLifecycle()
+                val maintenanceError by reminderViewModel.maintenanceError.collectAsStateWithLifecycle()
                 val saveCompleted by reminderViewModel.saveCompleted.collectAsStateWithLifecycle()
                 LaunchedEffect(saveCompleted) {
                     if (saveCompleted) {
                         showAddScreen = false
+                        editingId = null
                         reminderViewModel.consumeSaveCompleted()
                     }
                 }
 
                 BackHandler(enabled = showAddScreen) {
-                    if (!isSaving) showAddScreen = false
+                    if (!isSaving) {
+                        showAddScreen = false
+                        editingId = null
+                    }
                 }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     if (showAddScreen) {
-                        AddReminderScreen(
-                            modifier = Modifier.padding(innerPadding),
-                            onBack = { showAddScreen = false },
-                            onSave = { reminder ->
-                                reminderViewModel.saveReminder(reminder)
-                            },
-                            isSaving = isSaving,
-                            saveError = saveError
-                        )
+                        val initialReminder = reminders.firstOrNull { it.id == editingId }
+                        if (editingId != null && initialReminder == null) {
+                            Column(modifier = Modifier.padding(innerPadding).padding(16.dp)) {
+                                Text(loadError ?: "Loading reminder…")
+                                Button(onClick = {
+                                    showAddScreen = false
+                                    editingId = null
+                                }) { Text("Cancel") }
+                            }
+                        } else {
+                            key(editingId) {
+                                AddReminderScreen(
+                                    modifier = Modifier.padding(innerPadding),
+                                    onBack = {
+                                        showAddScreen = false
+                                        editingId = null
+                                    },
+                                    onSave = reminderViewModel::saveReminder,
+                                    isSaving = isSaving,
+                                    saveError = saveError,
+                                    initialReminder = initialReminder
+                                )
+                            }
+                        }
                     } else {
                         ReminderListScreen(
                             modifier = Modifier.padding(innerPadding),
                             onAdd = {
                                 reminderViewModel.clearSaveError()
+                                editingId = null
                                 showAddScreen = true
                             },
                             reminders = reminders,
-                            loadError = loadError
+                            loadError = loadError,
+                            maintenanceError = maintenanceError,
+                            isWorking = isSaving,
+                            onEdit = { reminder ->
+                                reminderViewModel.clearSaveError()
+                                editingId = reminder.id
+                                showAddScreen = true
+                            },
+                            onDelete = reminderViewModel::deleteReminder,
+                            onEnabledChange = reminderViewModel::setReminderEnabled
                         )
                     }
                 }
@@ -97,8 +133,34 @@ fun ReminderListScreen(
     modifier: Modifier = Modifier,
     onAdd: () -> Unit = {},
     reminders: List<Reminder> = emptyList(),
-    loadError: String? = null
+    loadError: String? = null,
+    maintenanceError: String? = null,
+    isWorking: Boolean = false,
+    onEdit: (Reminder) -> Unit = {},
+    onDelete: (Long) -> Unit = {},
+    onEnabledChange: (Long, Boolean) -> Unit = { _, _ -> }
 ) {
+    var deleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val reminderToDelete = reminders.firstOrNull { it.id == deleteId }
+    if (reminderToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { deleteId = null },
+            title = { Text("Delete reminder?") },
+            text = { Text("Permanently delete “${reminderToDelete.name}”?") },
+            confirmButton = {
+                TextButton(
+                    enabled = !isWorking,
+                    onClick = {
+                        onDelete(reminderToDelete.id)
+                        deleteId = null
+                    }
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteId = null }) { Text("Cancel") }
+            }
+        )
+    }
     Column(
         modifier = modifier.fillMaxSize()
             .verticalScroll(rememberScrollState())
@@ -111,10 +173,13 @@ fun ReminderListScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Button(onClick = onAdd) {
+        Button(onClick = onAdd, enabled = !isWorking) {
             Text("Add Reminder")
         }
 
+        if (maintenanceError != null) {
+            Text(maintenanceError, color = MaterialTheme.colorScheme.error)
+        }
         if (loadError != null) {
             Text(loadError, color = MaterialTheme.colorScheme.error)
         } else if (reminders.isEmpty()) {
@@ -124,6 +189,25 @@ fun ReminderListScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(reminder.name, style = MaterialTheme.typography.titleMedium)
                 Text(reminder.instructions, style = MaterialTheme.typography.bodyLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (reminder.enabled) "Enabled" else "Disabled",
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = reminder.enabled,
+                        onCheckedChange = { onEnabledChange(reminder.id, it) },
+                        enabled = !isWorking
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { onEdit(reminder) }, enabled = !isWorking) {
+                        Text("Edit")
+                    }
+                    TextButton(onClick = { deleteId = reminder.id }, enabled = !isWorking) {
+                        Text("Delete")
+                    }
+                }
             }
         }
     }
@@ -135,28 +219,32 @@ fun AddReminderScreen(
     onBack: () -> Unit,
     onSave: (Reminder) -> Unit,
     isSaving: Boolean = false,
-    saveError: String? = null
+    saveError: String? = null,
+    initialReminder: Reminder? = null
 ) {
-    var reminderName by rememberSaveable {
-        mutableStateOf("")
+    var reminderName by rememberSaveable(initialReminder?.id) {
+        mutableStateOf(initialReminder?.name ?: "")
     }
 
-    var medicationInstructions by rememberSaveable {
-        mutableStateOf("")
+    var medicationInstructions by rememberSaveable(initialReminder?.id) {
+        mutableStateOf(initialReminder?.instructions ?: "")
     }
 
-    var doseIntervalHours by rememberSaveable {
-        mutableStateOf("8")
+    var doseIntervalHours by rememberSaveable(initialReminder?.id) {
+        mutableStateOf(initialReminder?.doseIntervalHours?.toString() ?: "8")
     }
 
-    var nagIntervalMinutes by rememberSaveable {
-        mutableStateOf("15")
+    var nagIntervalMinutes by rememberSaveable(initialReminder?.id) {
+        mutableStateOf(initialReminder?.nagIntervalMinutes?.toString() ?: "15")
+    }
+    var reminderEnabled by rememberSaveable(initialReminder?.id) {
+        mutableStateOf(initialReminder?.enabled ?: true)
     }
 
     val context = LocalContext.current
 
-    var startTimeMillis by rememberSaveable {
-        mutableStateOf(System.currentTimeMillis())
+    var startTimeMillis by rememberSaveable(initialReminder?.id) {
+        mutableStateOf(initialReminder?.startTimeMillis ?: System.currentTimeMillis())
     }
 
     val selectedCalendar = Calendar.getInstance().apply {
@@ -178,7 +266,7 @@ fun AddReminderScreen(
             .padding(16.dp)
     ) {
         Text(
-            text = "Add Reminder",
+            text = if (initialReminder == null) "Add Reminder" else "Edit Reminder",
             style = MaterialTheme.typography.headlineMedium
         )
 
@@ -291,19 +379,30 @@ fun AddReminderScreen(
             }
         }
 
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (reminderEnabled) "Enabled" else "Disabled", modifier = Modifier.weight(1f))
+            Switch(
+                checked = reminderEnabled,
+                onCheckedChange = { reminderEnabled = it },
+                enabled = !isSaving
+            )
+        }
+
         Button(onClick = onBack, enabled = !isSaving) {
-            Text("Back")
+            Text("Cancel")
         }
 
         Button(
             onClick = {
                 onSave(
                     Reminder(
+                        id = initialReminder?.id ?: 0,
                         name = reminderName.trim(),
                         instructions = medicationInstructions.trim(),
                         startTimeMillis = startTimeMillis,
                         doseIntervalHours = doseIntervalHours.toInt(),
-                        nagIntervalMinutes = nagIntervalMinutes.toInt()
+                        nagIntervalMinutes = nagIntervalMinutes.toInt(),
+                        enabled = reminderEnabled
                     )
                 )
             },

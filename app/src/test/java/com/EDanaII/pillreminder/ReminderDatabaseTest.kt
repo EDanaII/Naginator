@@ -70,4 +70,92 @@ class ReminderDatabaseTest {
         val nextId = database.reminderDao().insert(reminder())
         assertTrue(nextId > id)
     }
+
+    private fun reopenDatabase() {
+        database.close()
+        database = openDatabase()
+    }
+
+    @Test
+    fun deletePersistsAndLeavesOtherReminderUnchanged() = runBlocking {
+        val dao = database.reminderDao()
+        val deletedId = dao.insert(reminder())
+        val retained = reminder().copy(name = "Evening pills")
+        val retainedId = dao.insert(retained)
+
+        assertEquals(1, dao.delete(deletedId))
+        reopenDatabase()
+
+        assertEquals(listOf(retained.copy(id = retainedId)),
+            database.reminderDao().observeReminders().first())
+    }
+
+    @Test
+    fun editingPreservesIdentityAndPersistsAllChangedFields() = runBlocking {
+        val dao = database.reminderDao()
+        val id = dao.insert(reminder())
+        val otherId = dao.insert(reminder().copy(name = "Other pills"))
+        val edited = reminder().copy(
+            id = id,
+            name = "Updated pills",
+            instructions = "Pill B — 1 tablet",
+            startTimeMillis = 1_900_000_000_000,
+            doseIntervalHours = 12,
+            nagIntervalMinutes = 30,
+            enabled = true
+        )
+        assertEquals(1, dao.update(
+            edited.id, edited.name, edited.instructions, edited.startTimeMillis,
+            edited.doseIntervalHours, edited.nagIntervalMinutes, edited.enabled
+        ))
+        reopenDatabase()
+
+        assertEquals(listOf(edited, reminder().copy(id = otherId, name = "Other pills")),
+            database.reminderDao().observeReminders().first())
+    }
+
+    @Test
+    fun enableAndDisablePersistWithoutChangingOtherFields() = runBlocking {
+        val original = reminder().copy(enabled = true)
+        val id = database.reminderDao().insert(original)
+        assertEquals(1, database.reminderDao().setEnabled(id, false))
+        reopenDatabase()
+        assertEquals(listOf(original.copy(id = id, enabled = false)),
+            database.reminderDao().observeReminders().first())
+
+        assertEquals(1, database.reminderDao().setEnabled(id, true))
+        reopenDatabase()
+        assertEquals(listOf(original.copy(id = id)),
+            database.reminderDao().observeReminders().first())
+    }
+
+    @Test
+    fun defaultEnabledReminderRemainsEnabledOnReopen() = runBlocking {
+        val original = Reminder(
+            name = "Default enabled",
+            instructions = "One pill",
+            startTimeMillis = 1_800_000_000_000,
+            doseIntervalHours = 8,
+            nagIntervalMinutes = 15
+        )
+        val id = database.reminderDao().insert(original)
+        reopenDatabase()
+        assertEquals(listOf(original.copy(id = id)),
+            database.reminderDao().observeReminders().first())
+        assertTrue(database.reminderDao().observeReminders().first().single().enabled)
+    }
+
+    @Test
+    fun editingDeletedReminderDoesNotRecreateIt() = runBlocking {
+        val dao = database.reminderDao()
+        val original = reminder()
+        val id = dao.insert(original)
+        dao.delete(id)
+        assertEquals(0, dao.update(
+            id, original.name, original.instructions, original.startTimeMillis,
+            original.doseIntervalHours, original.nagIntervalMinutes, original.enabled
+        ))
+        reopenDatabase()
+        assertTrue(database.reminderDao().observeReminders().first().isEmpty())
+    }
 }

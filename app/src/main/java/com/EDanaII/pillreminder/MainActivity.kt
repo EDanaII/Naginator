@@ -119,7 +119,8 @@ class MainActivity : ComponentActivity() {
                                 showAddScreen = true
                             },
                             onDelete = reminderViewModel::deleteReminder,
-                            onEnabledChange = reminderViewModel::setReminderEnabled
+                            onEnabledChange = reminderViewModel::setReminderEnabled,
+                            permissionsContent = { AlarmPermissionsSection(this@MainActivity) }
                         )
                     }
                 }
@@ -138,7 +139,8 @@ fun ReminderListScreen(
     isWorking: Boolean = false,
     onEdit: (Reminder) -> Unit = {},
     onDelete: (Long) -> Unit = {},
-    onEnabledChange: (Long, Boolean) -> Unit = { _, _ -> }
+    onEnabledChange: (Long, Boolean) -> Unit = { _, _ -> },
+    permissionsContent: @Composable () -> Unit = {}
 ) {
     var deleteId by rememberSaveable { mutableStateOf<Long?>(null) }
     val reminderToDelete = reminders.firstOrNull { it.id == deleteId }
@@ -176,6 +178,8 @@ fun ReminderListScreen(
         Button(onClick = onAdd, enabled = !isWorking) {
             Text("Add Reminder")
         }
+
+        permissionsContent()
 
         if (maintenanceError != null) {
             Text(maintenanceError, color = MaterialTheme.colorScheme.error)

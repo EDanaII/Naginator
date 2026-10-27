@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -44,6 +45,7 @@ fun AlarmPermissionsSection(activity: ComponentActivity) {
     var status by remember(activity) { mutableStateOf(AlarmPermissions.read(activity)) }
     var showRationale by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var diagnosticStatus by remember { mutableStateOf<String?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
     var notificationRationale by remember(activity) {
         mutableStateOf(Build.VERSION.SDK_INT >= 33 &&
@@ -78,7 +80,7 @@ fun AlarmPermissionsSection(activity: ComponentActivity) {
             try {
                 activity.startActivity(AlarmPermissions.appSettings(activity))
             } catch (_: ActivityNotFoundException) {
-                error = "Settings unavailable. Open Android Settings, then Apps, then PillReminder."
+                error = activity.getString(R.string.settings_unavailable, activity.getString(R.string.app_name))
             } catch (_: SecurityException) {
                 error = "Android blocked access to settings. Open Settings manually."
             }
@@ -104,7 +106,7 @@ fun AlarmPermissionsSection(activity: ComponentActivity) {
         AlertDialog(
             onDismissRequest = { showRationale = false },
             title = { Text("Allow medication notifications?") },
-            text = { Text("Notifications will let Pill Reminder show which pills are due. You can still manage reminders without this permission.") },
+            text = { Text(stringResource(R.string.notification_permission_rationale, stringResource(R.string.app_name))) },
             confirmButton = {
                 TextButton(onClick = {
                     showRationale = false
@@ -123,7 +125,7 @@ fun AlarmPermissionsSection(activity: ComponentActivity) {
     if (expanded) {
         Column {
             Text("Alarm permissions", style = MaterialTheme.typography.titleMedium)
-            Text("Prepare access for future medication alerts. This version does not deliver alarms yet.")
+            Text("Allow scheduled medication alerts. Android settings control sound and full-screen presentation.")
             Spacer(Modifier.height(8.dp))
             Text("Notifications: " + when {
                 status.notificationsAllowed -> "Allowed"
@@ -131,6 +133,11 @@ fun AlarmPermissionsSection(activity: ComponentActivity) {
                 else -> "Not allowed"
             })
             Text("Show which pills are due, including while the app is closed.")
+            if (status.notificationsAllowed) {
+                TextButton(onClick = {
+                    openSettings(AlarmPermissions.notificationSettings(activity))
+                }) { Text("Notification and sound settings") }
+            }
             if (!status.notificationsAllowed) {
                 TextButton(onClick = {
                     // Recheck at invocation; the display snapshot is not authorization.
@@ -178,6 +185,16 @@ fun AlarmPermissionsSection(activity: ComponentActivity) {
                     }
                 }) { Text("Full-screen alert settings") }
             }
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = {
+                diagnosticStatus = try {
+                    AudioDiagnosticBuffer.copy(activity)
+                    "Audio diagnostics copied. Paste them into ChatGPT."
+                } catch (_: Exception) {
+                    "Could not copy audio diagnostics. Please try again."
+                }
+            }) { Text("Copy audio diagnostics") }
+            diagnosticStatus?.let { Text(it) }
             if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
         }
     }

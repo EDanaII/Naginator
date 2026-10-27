@@ -10,12 +10,20 @@ interface ReminderDao {
     @Query("SELECT * FROM reminders ORDER BY id ASC")
     fun observeReminders(): Flow<List<Reminder>>
 
+    @Query("SELECT * FROM reminders")
+    suspend fun getAll(): List<Reminder>
+
+    @Query("SELECT * FROM reminders WHERE id = :id")
+    suspend fun findById(id: Long): Reminder?
+
     @Insert
     suspend fun insert(reminder: Reminder): Long
 
     @Query("""UPDATE reminders SET name = :name, instructions = :instructions,
         startTimeMillis = :startTimeMillis, doseIntervalHours = :doseIntervalHours,
-        nagIntervalMinutes = :nagIntervalMinutes, enabled = :enabled WHERE id = :id""")
+        nagIntervalMinutes = :nagIntervalMinutes, enabled = :enabled,
+        alarmSoundUri = :alarmSoundUri, vibrationEnabled = :vibrationEnabled,
+        escalationEnabled = :escalationEnabled WHERE id = :id""")
     suspend fun update(
         id: Long,
         name: String,
@@ -23,7 +31,10 @@ interface ReminderDao {
         startTimeMillis: Long,
         doseIntervalHours: Int,
         nagIntervalMinutes: Int,
-        enabled: Boolean
+        enabled: Boolean,
+        alarmSoundUri: String? = null,
+        vibrationEnabled: Boolean = true,
+        escalationEnabled: Boolean = true
     ): Int
 
     @Query("DELETE FROM reminders WHERE id = :id")

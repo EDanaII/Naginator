@@ -1,3 +1,5 @@
 <resources>
-    <string name="app_name">PillReminder</string>
+    <string name="app_name">Naginator</string>
+    <string name="settings_unavailable">Settings unavailable. Open Android Settings, then Apps, then %1$s.</string>
+    <string name="notification_permission_rationale">Notifications will let %1$s show which pills are due. You can still manage reminders without this permission.</string>
 </resources>

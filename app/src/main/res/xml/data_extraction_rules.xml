@@ -5,11 +5,19 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
+        <exclude domain="device_sharedpref" path="direct_boot_alarms.xml" />
+        <exclude domain="sharedpref" path="alarm_occurrences.xml" />
+        <exclude domain="sharedpref" path="alarm_configurations.xml" />
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
         -->
     </cloud-backup>
+    <device-transfer>
+        <exclude domain="device_sharedpref" path="direct_boot_alarms.xml" />
+        <exclude domain="sharedpref" path="alarm_occurrences.xml" />
+        <exclude domain="sharedpref" path="alarm_configurations.xml" />
+    </device-transfer>
     <!--
     <device-transfer>
         <include .../>

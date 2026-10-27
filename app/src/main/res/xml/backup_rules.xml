@@ -6,6 +6,9 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
+    <exclude domain="device_sharedpref" path="direct_boot_alarms.xml" />
+    <exclude domain="sharedpref" path="alarm_occurrences.xml" />
+    <exclude domain="sharedpref" path="alarm_configurations.xml" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

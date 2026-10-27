@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PillReminder"
+rootProject.name = "Naginator"
 include(":app")

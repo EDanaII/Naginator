@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import com.EDanaII.pillreminder.ui.theme.PillReminderTheme
 import androidx.compose.foundation.layout.Column
@@ -46,15 +47,25 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 
 class MainActivity : ComponentActivity() {
+    private lateinit var reminderViewModel: ReminderViewModel
+
+    override fun onResume() {
+        super.onResume()
+        reminderViewModel.synchronizeAlarms()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val reminderViewModel = ViewModelProvider(this)[ReminderViewModel::class.java]
+        reminderViewModel = ViewModelProvider(this)[ReminderViewModel::class.java]
         setContent {
             PillReminderTheme {
                 var showAddScreen by rememberSaveable { mutableStateOf(false) }
                 var editingId by rememberSaveable { mutableStateOf<Long?>(null) }
                 val reminders by reminderViewModel.reminders.collectAsStateWithLifecycle()
+                val alarmStatus by reminderViewModel.alarmStatus.collectAsStateWithLifecycle()
+                val alarmUiState by reminderViewModel.alarmUiState.collectAsStateWithLifecycle()
+                val alarmForeground = rememberAlarmForeground()
                 val isSaving by reminderViewModel.isSaving.collectAsStateWithLifecycle()
                 val saveError by reminderViewModel.saveError.collectAsStateWithLifecycle()
                 val loadError by reminderViewModel.loadError.collectAsStateWithLifecycle()
@@ -75,53 +86,67 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    if (showAddScreen) {
-                        val initialReminder = reminders.firstOrNull { it.id == editingId }
-                        if (editingId != null && initialReminder == null) {
-                            Column(modifier = Modifier.padding(innerPadding).padding(16.dp)) {
-                                Text(loadError ?: "Loading reminder…")
-                                Button(onClick = {
-                                    showAddScreen = false
-                                    editingId = null
-                                }) { Text("Cancel") }
-                            }
-                        } else {
-                            key(editingId) {
-                                AddReminderScreen(
-                                    modifier = Modifier.padding(innerPadding),
-                                    onBack = {
+                ForegroundAlarmHost(
+                    alarms = alarmUiState.activeAlarms,
+                    foreground = alarmForeground,
+                    isWorking = isSaving,
+                    onDismiss = reminderViewModel::dismissAlarm
+                ) { onOpenAlarm ->
+                    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                        if (showAddScreen) {
+                            val initialReminder = reminders.firstOrNull { it.id == editingId }
+                            if (editingId != null && initialReminder == null) {
+                                Column(modifier = Modifier.padding(innerPadding).padding(16.dp)) {
+                                    Text(loadError ?: "Loading reminder…")
+                                    Button(onClick = {
                                         showAddScreen = false
                                         editingId = null
-                                    },
-                                    onSave = reminderViewModel::saveReminder,
-                                    isSaving = isSaving,
-                                    saveError = saveError,
-                                    initialReminder = initialReminder
-                                )
+                                    }) { Text("Cancel") }
+                                }
+                            } else {
+                                key(editingId) {
+                                    AddReminderScreen(
+                                        modifier = Modifier.padding(innerPadding),
+                                        onBack = {
+                                            showAddScreen = false
+                                            editingId = null
+                                        },
+                                        onSave = reminderViewModel::saveReminder,
+                                        isSaving = isSaving,
+                                        saveError = saveError,
+                                        initialReminder = initialReminder
+                                    )
+                                }
                             }
+                        } else {
+                            ReminderListScreen(
+                                modifier = Modifier.padding(innerPadding),
+                                onAdd = {
+                                    reminderViewModel.clearSaveError()
+                                    editingId = null
+                                    showAddScreen = true
+                                },
+                                reminders = reminders,
+                                loadError = loadError,
+                                maintenanceError = maintenanceError,
+                                isWorking = isSaving,
+                                onEdit = { reminder ->
+                                    reminderViewModel.clearSaveError()
+                                    editingId = reminder.id
+                                    showAddScreen = true
+                                },
+                                onDelete = reminderViewModel::deleteReminder,
+                                onEnabledChange = reminderViewModel::setReminderEnabled,
+                                permissionsContent = { AlarmPermissionsSection(this@MainActivity) },
+                                alarmStatus = alarmStatus,
+                                onTest = reminderViewModel::testReminder,
+                                onTestEscalation = reminderViewModel::testEscalation,
+                                alarmUiState = alarmUiState,
+                                onOpenAlarm = onOpenAlarm,
+                                onDismissAlarm = reminderViewModel::dismissAlarm,
+                                onCancelTest = reminderViewModel::cancelPendingTest
+                            )
                         }
-                    } else {
-                        ReminderListScreen(
-                            modifier = Modifier.padding(innerPadding),
-                            onAdd = {
-                                reminderViewModel.clearSaveError()
-                                editingId = null
-                                showAddScreen = true
-                            },
-                            reminders = reminders,
-                            loadError = loadError,
-                            maintenanceError = maintenanceError,
-                            isWorking = isSaving,
-                            onEdit = { reminder ->
-                                reminderViewModel.clearSaveError()
-                                editingId = reminder.id
-                                showAddScreen = true
-                            },
-                            onDelete = reminderViewModel::deleteReminder,
-                            onEnabledChange = reminderViewModel::setReminderEnabled,
-                            permissionsContent = { AlarmPermissionsSection(this@MainActivity) }
-                        )
                     }
                 }
             }
@@ -140,7 +165,14 @@ fun ReminderListScreen(
     onEdit: (Reminder) -> Unit = {},
     onDelete: (Long) -> Unit = {},
     onEnabledChange: (Long, Boolean) -> Unit = { _, _ -> },
-    permissionsContent: @Composable () -> Unit = {}
+    permissionsContent: @Composable () -> Unit = {},
+    alarmStatus: String? = null,
+    onTest: (Long) -> Unit = {},
+    onTestEscalation: (Long) -> Unit = {},
+    alarmUiState: AlarmUiState = AlarmUiState(),
+    onOpenAlarm: (AlarmOccurrence) -> Unit = {},
+    onDismissAlarm: (AlarmOccurrence) -> Unit = {},
+    onCancelTest: (AlarmOccurrence) -> Unit = {}
 ) {
     var deleteId by rememberSaveable { mutableStateOf<Long?>(null) }
     val reminderToDelete = reminders.firstOrNull { it.id == deleteId }
@@ -169,7 +201,7 @@ fun ReminderListScreen(
             .padding(16.dp)
     ) {
         Text(
-            text = "Pill Reminder",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineMedium
         )
 
@@ -179,7 +211,22 @@ fun ReminderListScreen(
             Text("Add Reminder")
         }
 
+        alarmUiState.activeAlarms.forEach { alarm ->
+            Spacer(Modifier.height(16.dp))
+            Text(if (alarm.occurrence.test) "Active test alarm" else "Active medication alarm",
+                style = MaterialTheme.typography.titleLarge)
+            Text(alarm.reminder.name)
+            Text(alarm.reminder.instructions)
+            Button(onClick = { onOpenAlarm(alarm.occurrence) }, enabled = !isWorking) {
+                Text("Open alarm")
+            }
+            Button(onClick = { onDismissAlarm(alarm.occurrence) }, enabled = !isWorking) {
+                Text("Dismiss alarm")
+            }
+        }
+
         permissionsContent()
+        if (alarmStatus != null) Text(alarmStatus)
 
         if (maintenanceError != null) {
             Text(maintenanceError, color = MaterialTheme.colorScheme.error)
@@ -210,6 +257,38 @@ fun ReminderListScreen(
                     }
                     TextButton(onClick = { deleteId = reminder.id }, enabled = !isWorking) {
                         Text("Delete")
+                    }
+                }
+                val nextDose = alarmUiState.pendingDoses.firstOrNull { it.reminderId == reminder.id }
+                if (reminder.enabled) {
+                    Text(nextDose?.let {
+                        "Next scheduled dose: " + DateFormat.getDateTimeInstance()
+                            .format(java.util.Date(it.scheduledTime))
+                    } ?: "No dose currently scheduled")
+                }
+                val pendingTest = alarmUiState.pendingTests.firstOrNull { it.reminderId == reminder.id }
+                val testActive = alarmUiState.activeAlarms.any {
+                    it.reminder.id == reminder.id && it.occurrence.test
+                }
+                if (pendingTest != null) {
+                    Text("Test pending: " + DateFormat.getDateTimeInstance()
+                        .format(java.util.Date(pendingTest.scheduledTime)))
+                    TextButton(onClick = { onCancelTest(pendingTest) }, enabled = !isWorking) {
+                        Text("Cancel pending test")
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(modifier = Modifier.weight(1f), onClick = { onTest(reminder.id) },
+                        enabled = reminder.enabled && !isWorking && !testActive) {
+                        Text(when {
+                            testActive -> "Test active — dismiss first"
+                            pendingTest != null -> "Reschedule test in 1 minute"
+                            else -> "Test in 1 minute"
+                        })
+                    }
+                    TextButton(modifier = Modifier.weight(1f), onClick = { onTestEscalation(reminder.id) },
+                        enabled = reminder.enabled && !isWorking && !testActive) {
+                        Text("Test Escalation")
                     }
                 }
             }
@@ -244,6 +323,9 @@ fun AddReminderScreen(
     var reminderEnabled by rememberSaveable(initialReminder?.id) {
         mutableStateOf(initialReminder?.enabled ?: true)
     }
+    var alarmSoundUri by rememberSaveable(initialReminder?.id) { mutableStateOf(initialReminder?.alarmSoundUri) }
+    var vibrationEnabled by rememberSaveable(initialReminder?.id) { mutableStateOf(initialReminder?.vibrationEnabled ?: true) }
+    var escalationEnabled by rememberSaveable(initialReminder?.id) { mutableStateOf(initialReminder?.escalationEnabled ?: true) }
 
     val context = LocalContext.current
 
@@ -329,6 +411,9 @@ fun AddReminderScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        AlarmAlertSettings(alarmSoundUri, vibrationEnabled, escalationEnabled, !isSaving,
+            { alarmSoundUri = it }, { vibrationEnabled = it }, { escalationEnabled = it })
+        Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = "Starting Date and Time",
             style = MaterialTheme.typography.titleMedium
@@ -406,7 +491,10 @@ fun AddReminderScreen(
                         startTimeMillis = startTimeMillis,
                         doseIntervalHours = doseIntervalHours.toInt(),
                         nagIntervalMinutes = nagIntervalMinutes.toInt(),
-                        enabled = reminderEnabled
+                        enabled = reminderEnabled,
+                        alarmSoundUri = alarmSoundUri,
+                        vibrationEnabled = vibrationEnabled,
+                        escalationEnabled = escalationEnabled
                     )
                 )
             },

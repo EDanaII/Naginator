@@ -75,11 +75,11 @@ class BootCompletedReceiverTest {
         assertTrue(alarms.scheduledAlarms.isEmpty())
     }
 
-    private fun boot() {
+    private fun boot(action: String = Intent.ACTION_BOOT_COMPLETED) {
         val finished = CountDownLatch(1)
         // Resolve the manifest receiver and wait for its goAsync result to be finished.
         context.sendOrderedBroadcast(
-            Intent(Intent.ACTION_BOOT_COMPLETED).setPackage(context.packageName), null,
+            Intent(action).setPackage(context.packageName), null,
             object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) { finished.countDown() }
             }, Handler(Looper.getMainLooper()), 0, null, null)
@@ -141,6 +141,20 @@ class BootCompletedReceiverTest {
         assertEquals(original, coordinator.scheduled(reminder.id, false))
         assertEquals(1, alarms.scheduledAlarms.size)
         assertEquals(original.scheduledTime, alarms.scheduledAlarms.single().triggerAtTime)
+        assertTrue(notifications.activeNotifications.isEmpty())
+    }
+
+    @Test @Config(sdk = [31]) fun exactAlarmPermissionGrantRestoresSameOccurrenceWithoutAppResume() = runBlocking {
+        val reminder = save()
+        val original = coordinator.scheduled(reminder.id, false)!!
+        loseOsAlarms()
+        val preferences = DirectBootAlarmStore(context).preferences
+        check(preferences.edit().remove("scheduled:${reminder.id}:false")
+            .putString("retry:${reminder.id}:false", AlarmCoordinator.encode(original)).commit())
+        boot(AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED)
+        assertEquals(original, coordinator.scheduled(reminder.id, false))
+        assertEquals(original.scheduledTime, alarms.scheduledAlarms.single().triggerAtTime)
+        assertFalse(preferences.contains("retry:${reminder.id}:false"))
         assertTrue(notifications.activeNotifications.isEmpty())
     }
 

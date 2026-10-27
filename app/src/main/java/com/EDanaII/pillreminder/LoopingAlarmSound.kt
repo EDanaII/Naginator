@@ -7,6 +7,8 @@ import android.media.RingtoneManager
 import android.media.VolumeShaper
 import android.net.Uri
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 
 internal object AlarmSounds {
     fun candidates(context: Context, selected: String?, unlocked: Boolean): List<Uri> = buildList {
@@ -36,17 +38,20 @@ internal class LoopingAlarmSound(private val context: Context,
     private var player: MediaPlayer? = null
     private var cutoff: AutoCloseable? = null
     private var generation = 0
+    private val handler = Handler(Looper.getMainLooper())
+    private var preparationTimeout: Runnable? = null
 
-    fun play(selected: String?, gain: Float, unlocked: Boolean) {
+    fun play(selected: String?, gain: Float, unlocked: Boolean, durationMs: Long = AlertEscalation.BURST_MS) {
         stop()
         val epoch = generation
-        val deadline = SystemClock.elapsedRealtime() + AlertEscalation.BURST_MS
+        val deadline = SystemClock.elapsedRealtime() + durationMs.coerceIn(0, AlertEscalation.BURST_MS)
         val candidates = AlarmSounds.candidates(context, selected, unlocked)
         val run = AlarmSoundDiagnostics.nextRun()
         AlarmSoundDiagnostics.event(context, "PLAYBACK_BEGIN run=$run selection=${AlarmSoundDiagnostics.selection(selected)} " +
             "unlocked=$unlocked gain=$gain")
         fun attempt(index: Int) {
             if (epoch != generation) return
+            if (SystemClock.elapsedRealtime() >= deadline) return
             if (index >= candidates.size) {
                 AlarmSoundDiagnostics.event(context, "PLAYBACK_EXHAUSTED run=$run gain=$gain")
                 return
@@ -59,12 +64,14 @@ internal class LoopingAlarmSound(private val context: Context,
             AlarmSoundDiagnostics.event(context, "CANDIDATE_ATTEMPT run=$run source=$source gain=$gain")
             val next = try { createPlayer() } catch (exception: Exception) {
                 AlarmSoundDiagnostics.failure(context, "CANDIDATE_FAILED run=$run source=$source stage=CREATE_PLAYER gain=$gain", exception)
-                throw exception // Preserve the existing creation-failure behavior.
+                attempt(index + 1)
+                return
             }
             player = next
             var stage = "AUDIO_ATTRIBUTES"
             fun fallback() {
                 if (player !== next || epoch != generation) return
+                cancelPreparationTimeout()
                 player = null
                 next.release()
                 closeCutoff()
@@ -82,6 +89,7 @@ internal class LoopingAlarmSound(private val context: Context,
                 stage = "SET_LISTENERS"
                 next.setOnPreparedListener {
                     if (player === next && epoch == generation) {
+                        cancelPreparationTimeout()
                         AlarmSoundDiagnostics.event(context, "CANDIDATE_PREPARED run=$run source=$source gain=$gain")
                         val remaining = deadline - SystemClock.elapsedRealtime()
                         if (remaining <= 0) {
@@ -111,6 +119,12 @@ internal class LoopingAlarmSound(private val context: Context,
                     true
                 }
                 stage = "PREPARE_ASYNC"
+                preparationTimeout = Runnable {
+                    if (player === next && epoch == generation) {
+                        AlarmSoundDiagnostics.event(context, "CANDIDATE_TIMEOUT run=$run source=$source gain=$gain")
+                        fallback()
+                    }
+                }.also { handler.postDelayed(it, minOf(6_000L, deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1)) }
                 next.prepareAsync()
             } catch (exception: Exception) {
                 AlarmSoundDiagnostics.failure(context, "CANDIDATE_FAILED run=$run source=$source stage=$stage gain=$gain", exception)
@@ -122,10 +136,16 @@ internal class LoopingAlarmSound(private val context: Context,
 
     fun stop() {
         generation++
+        cancelPreparationTimeout()
         val previous = player
         player = null
         previous?.release()
         closeCutoff()
+    }
+
+    private fun cancelPreparationTimeout() {
+        preparationTimeout?.let { handler.removeCallbacks(it) }
+        preparationTimeout = null
     }
 
     private fun closeCutoff() {

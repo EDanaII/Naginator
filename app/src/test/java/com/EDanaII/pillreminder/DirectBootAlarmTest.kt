@@ -335,10 +335,15 @@ class DirectBootAlarmTest {
             assertTrue(coordinator.synchronize().contains("denied"))
             assertEquals(pending, coordinator.scheduled(reminder.id, false))
             assertTrue(alarms.scheduledAlarms.isEmpty())
+            assertFalse(store.preferences.contains("scheduled:${reminder.id}:false"))
+            assertTrue(store.preferences.contains("retry:${reminder.id}:false"))
+            assertTrue(coordinator.uiState().pendingDoses.isEmpty())
             RegistrationRace.deny = false
             coordinator.synchronize()
             assertEquals(pending, coordinator.scheduled(reminder.id, false))
             assertEquals(pending.scheduledTime, alarms.scheduledAlarms.single().triggerAtTime)
+            assertTrue(store.preferences.contains("scheduled:${reminder.id}:false"))
+            assertFalse(store.preferences.contains("retry:${reminder.id}:false"))
         } finally {
             RegistrationRace.deny = false
         }
@@ -348,11 +353,77 @@ class DirectBootAlarmTest {
     class RegistrationRace : ShadowAlarmManager() {
         @Implementation
         override fun setExactAndAllowWhileIdle(type: Int, triggerAtMs: Long, operation: PendingIntent) {
-            if (deny) throw SecurityException("Exact alarm access changed during registration")
+            if (deny || (denyNags && shadowOf(operation).savedIntent.action == AlarmCoordinator.ACTION_NAG))
+                throw SecurityException("Exact alarm access changed during registration")
             super.setExactAndAllowWhileIdle(type, triggerAtMs, operation)
         }
 
-        companion object { var deny = false }
+        companion object {
+            var deny = false
+            var denyNags = false
+        }
+    }
+
+    @Test @Config(sdk = [31], shadows = [RegistrationRace::class])
+    fun failedNagSuccessorRegistrationRecoversWithoutChangingLevelTokenOrDoseAnchor() = runBlocking {
+        RegistrationRace.denyNags = false
+        val reminder = save()
+        val occurrence = coordinator.scheduled(reminder.id, false)!!
+        coordinator.deliver(occurrence, occurrence.scheduledTime)
+        val nextDose = coordinator.scheduled(reminder.id, false)!!
+        val first = coordinator.nagState(occurrence.token)!!
+        // Model Android consuming the one-shot nag before the receiver schedules its successor.
+        alarms.scheduledAlarms.filter {
+            shadowOf(it.operation!!).savedIntent.action == AlarmCoordinator.ACTION_NAG
+        }.forEach { manager.cancel(it.operation!!) }
+        try {
+            RegistrationRace.denyNags = true
+            assertTrue(coordinator.nag(occurrence, first.nextNagTime, first.nextNagTime))
+            val retry = coordinator.nagState(occurrence.token)!!
+            assertEquals(1, retry.level)
+            assertTrue(retry.nextNagTime > first.nextNagTime)
+            assertFalse(alarms.scheduledAlarms.any {
+                shadowOf(it.operation!!).savedIntent.action == AlarmCoordinator.ACTION_NAG
+            })
+            assertTrue(AudioDiagnosticBuffer.export(context).contains("kind=NAG status=FAILED"))
+            RegistrationRace.denyNags = false
+            repeat(2) { coordinator.synchronize() }
+            assertEquals(retry, coordinator.nagState(occurrence.token))
+            val registered = alarms.scheduledAlarms.filter {
+                shadowOf(it.operation!!).savedIntent.action == AlarmCoordinator.ACTION_NAG
+            }.single()
+            assertEquals(retry.nextNagTime, registered.triggerAtTime)
+            assertEquals(nextDose, coordinator.scheduled(reminder.id, false))
+            assertTrue(coordinator.nag(occurrence, retry.nextNagTime, retry.nextNagTime))
+            assertEquals(2, coordinator.nagState(occurrence.token)!!.level)
+        } finally {
+            RegistrationRace.denyNags = false
+        }
+    }
+
+    @Test @Config(sdk = [31], shadows = [RegistrationRace::class])
+    fun cancelRetryOnlyTestPreventsRecoveryAndRejectsItsStaleBroadcast() = runBlocking {
+        RegistrationRace.deny = false
+        val reminder = save()
+        val normal = coordinator.scheduled(reminder.id, false)!!
+        try {
+            RegistrationRace.deny = true
+            assertTrue(coordinator.testInOneMinute(reminder.id).contains("denied"))
+            val retry = coordinator.scheduled(reminder.id, true)!!
+            assertFalse(store.preferences.contains("scheduled:${reminder.id}:true"))
+            assertTrue(store.preferences.contains("retry:${reminder.id}:true"))
+            assertTrue(coordinator.cancelPendingTest(reminder.id, retry.token).contains("canceled"))
+            assertNull(coordinator.scheduled(reminder.id, true))
+            assertFalse(store.preferences.contains("retry:${reminder.id}:true"))
+            RegistrationRace.deny = false
+            coordinator.synchronize()
+            assertEquals(normal, coordinator.scheduled(reminder.id, false))
+            assertEquals(normal.scheduledTime, alarms.scheduledAlarms.single().triggerAtTime)
+            assertFalse(coordinator.deliver(retry, retry.scheduledTime))
+            assertNull(coordinator.nagState(retry.token))
+        } finally {
+            RegistrationRace.deny = false
+        }
     }
 
     @Test fun manifestMarksAllAlarmEntryPointsAwareAndBackupsExcludeRuntime() {

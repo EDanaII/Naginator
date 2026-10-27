@@ -12,8 +12,12 @@ internal object AudioDiagnosticBuffer {
     const val LIMIT = 200
     private val events = setOf("REMINDER_SAVED", "PLAYBACK_REQUEST", "PICKER_RESULT", "PICKER_GRANT",
         "PLAYBACK_BEGIN", "PLAYBACK_EXHAUSTED", "CANDIDATE_ATTEMPT", "CANDIDATE_FAILED",
-        "CANDIDATE_PREPARED", "PLAYBACK_DEADLINE", "CANDIDATE_STARTED")
+        "CANDIDATE_PREPARED", "PLAYBACK_DEADLINE", "CANDIDATE_STARTED", "CANDIDATE_TIMEOUT",
+        "FOCUS_REQUEST", "FOCUS_CHANGE", "PLAYBACK_STOP", "PLAYBACK_FAILURE", "SERVICE_REQUEST", "SERVICE_START", "REGISTRATION")
     private val categories = mapOf(
+        "status" to setOf("FAILED", "ACCEPTED", "STARTED", "REGISTERED", "RETRY"),
+        "kind" to setOf("DOSE", "TEST", "NAG"),
+        "reason" to setOf("REPLACED", "DISMISSED", "TIMEOUT", "SERVICE_DESTROYED", "FOREGROUND_FAILED", "PREPARATION", "NOTIFICATIONS_BLOCKED"),
         "selection" to setOf("NULL", "DEFAULT", "CUSTOM"),
         "source" to setOf("CUSTOM", "SYSTEM_DEFAULT", "PACKAGED_FALLBACK"),
         "stage" to setOf("CREATE_PLAYER", "AUDIO_ATTRIBUTES", "SET_DATA_SOURCE", "SET_LOOPING",
@@ -34,7 +38,7 @@ internal object AudioDiagnosticBuffer {
             when {
                 key in categories -> value in categories.getValue(key)
                 key in booleans -> value == "true" || value == "false"
-                key in setOf("id", "level", "mediaErrorWhat", "mediaErrorExtra") -> value.matches(Regex("-?[0-9]{1,19}"))
+                key in setOf("id", "level", "mediaErrorWhat", "mediaErrorExtra", "change", "result") -> value.matches(Regex("-?[0-9]{1,19}"))
                 key == "gain" -> value in setOf("0.25", "0.5", "0.75", "1.0")
                 key == "run" -> value.matches(Regex("[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}"))
                 key == "exception" || key == "causeType" -> value == "NONE" ||

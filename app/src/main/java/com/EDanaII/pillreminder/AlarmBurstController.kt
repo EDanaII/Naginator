@@ -12,7 +12,11 @@ internal class AlarmBurstController(
     private val scheduleTimeout: (Long, () -> Unit) -> (() -> Unit),
     private val idle: () -> Unit
 ) {
-    interface Output { fun start(request: AlarmPlaybackRequest); fun stop() }
+    interface Output {
+        fun start(request: AlarmPlaybackRequest)
+        fun stop()
+        fun stop(reason: String) = stop()
+    }
     private val waiting = mutableListOf<AlarmPlaybackRequest>()
     private val completed = mutableMapOf<String, Long>()
     private val dismissed = mutableSetOf<String>()
@@ -37,7 +41,7 @@ internal class AlarmBurstController(
         // Include requests still loading asynchronously, not only those already in the queue.
         dismissed.addAll(tokens)
         waiting.removeAll { it.token in dismissed }
-        if (current?.token in dismissed) finish() else if (current == null) drain()
+        if (current?.token in dismissed) finish("DISMISSED") else if (current == null) drain()
     }
 
     fun dismissSchedule(id: Long, test: Boolean? = null) {
@@ -48,11 +52,11 @@ internal class AlarmBurstController(
         dismissTokens(tokens)
     }
 
-    fun shutdown() {
+    fun shutdown(reason: String = "SERVICE_DESTROYED") {
         waiting.clear()
         cancelTimeout?.invoke()
         cancelTimeout = null
-        output.stop()
+        output.stop(reason)
         current = null
     }
 
@@ -67,11 +71,11 @@ internal class AlarmBurstController(
         output.start(next)
     }
 
-    private fun finish() {
+    private fun finish(reason: String = "TIMEOUT") {
         cancelTimeout?.invoke()
         cancelTimeout = null
         current?.let { completed[it.token] = it.alertAt }
-        output.stop() // Always stop audio AND vibration before another burst can start.
+        output.stop(reason) // Always stop audio AND vibration before another burst can start.
         current = null
         drain()
     }

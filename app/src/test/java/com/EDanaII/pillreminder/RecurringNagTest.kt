@@ -50,6 +50,28 @@ class RecurringNagTest {
         return database.reminderDao().getAll().single()
     }
 
+    @Test fun rejectedPlaybackDoesNotBreakNagSuccessorsOrAnchoredDose() = runBlocking {
+        var requests = 0
+        coordinator = AlarmCoordinator(context, database.reminderDao()) { _, _, _ -> requests++; false }
+        val reminder = save()
+        val dose = coordinator.scheduled(reminder.id, false)!!
+        assertTrue(coordinator.deliver(dose, dose.scheduledTime))
+        val nextDose = coordinator.scheduled(reminder.id, false)!!
+        repeat(4) { index ->
+            val before = coordinator.nagState(dose.token)!!
+            assertTrue(coordinator.nag(dose, before.nextNagTime, before.nextNagTime))
+            val after = coordinator.nagState(dose.token)!!
+            assertEquals(minOf(index + 1, 3), after.level)
+            assertTrue(after.nextNagTime > before.nextNagTime)
+            assertTrue(alarms.scheduledAlarms.any { it.triggerAtTime == after.nextNagTime })
+            assertEquals(nextDose, coordinator.scheduled(reminder.id, false))
+        }
+        assertEquals(5, requests)
+        coordinator.dismiss(reminder.id, false, dose.token)
+        assertNull(coordinator.nagState(dose.token))
+        assertEquals(nextDose, coordinator.scheduled(reminder.id, false))
+    }
+
     @Test fun savedSelectionAndUnlockedPlaybackAreLoggedWithoutMedicationDetails() = runBlocking {
         val reminder = save()
         val dose = coordinator.scheduled(reminder.id, false)!!

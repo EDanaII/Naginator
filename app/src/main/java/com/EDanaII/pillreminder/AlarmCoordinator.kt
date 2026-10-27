@@ -43,7 +43,8 @@ data class AlarmUiState(
 /** Serializes database maintenance with delivery so queued stale broadcasts cannot alert. */
 class AlarmCoordinator(
     context: Context,
-    dao: ReminderDao? = null
+    dao: ReminderDao? = null,
+    private val requestPlayback: (Context, String, Long) -> Boolean = AlarmPlaybackService::request
 ) {
     private val context = context.applicationContext
     private val reminderDao by lazy {
@@ -233,9 +234,10 @@ class AlarmCoordinator(
         val state = NagState(expected, nextNagTime = if (nagMinutes > 0)
             AlertEscalation.nextNag(now, nagMinutes) else 0, lastAlertTime = now)
         val edit = preferences.edit().remove(key("scheduled", expected.reminderId, expected.test))
+            .remove(key("retry", expected.reminderId, expected.test))
         // A blocked presentation must not silently acknowledge the dose.
         edit.putString(activeKey(expected.token), state.encode())
-        if (next != null) edit.putString(key("scheduled", next.reminderId, false), encode(next))
+        if (next != null) edit.putString(key("retry", next.reminderId, false), encode(next))
         check(edit.commit())
         val schedulingProblem = unavailableReason()
         if (next != null && schedulingProblem == null) arm(next)
@@ -252,7 +254,7 @@ class AlarmCoordinator(
         }
         try {
             AlarmNotifications.show(context, reminder, expected)
-            AlarmPlaybackService.request(context, expected.token, state.lastAlertTime)
+            requestPlayback(context, expected.token, state.lastAlertTime)
             true
         } catch (exception: SecurityException) {
             Log.w(TAG, "Initial alert suppressed id=${incoming.reminderId} test=${incoming.test}: " +
@@ -291,6 +293,7 @@ class AlarmCoordinator(
         // Deliberately does not touch the next scheduled dose.
     }
 
+    /** Desired occurrence, including a failed registration awaiting retry; UI lists only confirmed registrations. */
     internal fun scheduled(id: Long, test: Boolean): AlarmOccurrence? = read("scheduled", id, test)
 
     /** Only the persisted due time can advance a chain, so duplicate/stale broadcasts cannot nag. */
@@ -338,7 +341,7 @@ class AlarmCoordinator(
                 "playback skipped, advanced active state retained", exception)
             throw exception
         }
-        AlarmPlaybackService.request(context, incoming.token, now)
+        requestPlayback(context, incoming.token, now)
         true
     }
 
@@ -401,12 +404,15 @@ class AlarmCoordinator(
     }
 
     private fun armNag(state: NagState) {
+        AlarmSoundDiagnostics.event(context, "REGISTRATION id=${state.occurrence.reminderId} kind=NAG status=RETRY")
         try {
             manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, state.nextNagTime,
                 nagOperation(state, PendingIntent.FLAG_UPDATE_CURRENT)!!)
+            AlarmSoundDiagnostics.event(context, "REGISTRATION id=${state.occurrence.reminderId} kind=NAG status=REGISTERED")
             Log.i(TAG, "Nag registered id=${state.occurrence.reminderId} test=${state.occurrence.test} " +
                 "nextNag=${state.nextNagTime} level=${state.level}")
         } catch (exception: SecurityException) {
+            AlarmSoundDiagnostics.event(context, "REGISTRATION id=${state.occurrence.reminderId} kind=NAG status=FAILED")
             Log.w(TAG, "Nag registration denied id=${state.occurrence.reminderId} nextNag=${state.nextNagTime}; " +
                 "persisted state retained, synchronize after access is restored", exception)
         }
@@ -442,14 +448,22 @@ class AlarmCoordinator(
 
     /** Null means successfully armed; there is no inexact fallback. */
     private fun arm(occurrence: AlarmOccurrence): String? {
-        put("scheduled", occurrence)
+        // Durable intent is distinct from successful Android registration. Retry the same identity.
+        check(preferences.edit().putString(key("retry", occurrence.reminderId, occurrence.test), encode(occurrence))
+            .remove(key("scheduled", occurrence.reminderId, occurrence.test)).commit())
+        val kind = if (occurrence.test) "TEST" else "DOSE"
+        AlarmSoundDiagnostics.event(context, "REGISTRATION id=${occurrence.reminderId} kind=$kind status=RETRY")
         return try {
             manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,
                 occurrence.scheduledTime, operation(occurrence, PendingIntent.FLAG_UPDATE_CURRENT)!!)
+            check(preferences.edit().putString(key("scheduled", occurrence.reminderId, occurrence.test), encode(occurrence))
+                .remove(key("retry", occurrence.reminderId, occurrence.test)).commit())
+            AlarmSoundDiagnostics.event(context, "REGISTRATION id=${occurrence.reminderId} kind=$kind status=REGISTERED")
             Log.i(TAG, "Registered id=${occurrence.reminderId} test=${occurrence.test} " +
                 "scheduled=${occurrence.scheduledTime}")
             null
         } catch (exception: SecurityException) {
+            AlarmSoundDiagnostics.event(context, "REGISTRATION id=${occurrence.reminderId} kind=$kind status=FAILED")
             Log.w(TAG, "Registration denied id=${occurrence.reminderId} test=${occurrence.test}", exception)
             // Permission may change after the live check. Keep the same durable identity for retry.
             "Exact-alarm access was denied. Enable Alarms & reminders access in Permissions."
@@ -475,6 +489,7 @@ class AlarmCoordinator(
             it.cancel()
         }
         remove("scheduled", id, test)
+        remove("retry", id, test)
         remove("active", id, test)
         AlarmPlaybackService.dismissTokens(affected.map { it.occurrence.token })
         AlarmPlaybackService.dismissReminder(id, test)
@@ -548,6 +563,7 @@ class AlarmCoordinator(
         check(edit.remove("definition:$id").putBoolean("known:$id", true)
             .putBoolean("repair:$id", true)
             .remove(key("scheduled", id, false)).remove(key("scheduled", id, true))
+            .remove(key("retry", id, false)).remove(key("retry", id, true))
             .remove(key("active", id, false)).remove(key("active", id, true)).commit())
         AlarmPlaybackService.dismissTokens(affected.map { it.occurrence.token })
         cancelAll(id)
@@ -613,12 +629,6 @@ class AlarmCoordinator(
         first.reminderId == second.reminderId && first.scheduledTime == second.scheduledTime &&
             first.token == second.token && first.test == second.test
 
-    private fun put(kind: String, occurrence: AlarmOccurrence) {
-        // Commit before exposing an OS PendingIntent; this is called off the main thread.
-        check(preferences.edit().putString(key(kind, occurrence.reminderId, occurrence.test),
-            encode(occurrence)).commit())
-    }
-
     private fun remove(kind: String, id: Long, test: Boolean) {
         val edit = preferences.edit().remove(key(kind, id, test))
         if (kind == "active") preferences.all.filterKeys { it.startsWith("active:") }.forEach { (key, value) ->
@@ -631,7 +641,8 @@ class AlarmCoordinator(
     private fun read(kind: String, id: Long, test: Boolean): AlarmOccurrence? =
         if (kind == "active") activeStates().firstOrNull {
             it.occurrence.reminderId == id && it.occurrence.test == test
-        }?.occurrence else preferences.getString(key(kind, id, test), null)?.let { decode(it) }
+        }?.occurrence else (preferences.getString(key(kind, id, test), null)
+            ?: if (kind == "scheduled") preferences.getString(key("retry", id, test), null) else null)?.let { decode(it) }
 
     private fun key(kind: String, id: Long, test: Boolean) = "$kind:$id:$test"
 

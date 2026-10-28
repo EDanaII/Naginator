@@ -98,6 +98,7 @@ object AlarmNotifications {
     }
 
     fun cancel(context: Context, id: Long, test: Boolean, token: String? = null) {
+        AlarmAudioOwnership.cancel(context, id, test, token)
         val manager = context.getSystemService(NotificationManager::class.java)
         if (token != null) manager.cancel(tag(id, test, token), 1)
         else manager.activeNotifications.filter {

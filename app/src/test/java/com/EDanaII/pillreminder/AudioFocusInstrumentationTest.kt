@@ -32,7 +32,7 @@ class AudioFocusInstrumentationTest {
     private fun request() = AlarmPlaybackRequest(AlarmOccurrence(7, 100, "private-token", false, "r"),
         100, 0, "content://private/tone", true, true, true)
 
-    @Before fun setUp() { CountingAudio.requests = 0 }
+    @Before fun setUp() { CountingAudio.requests = 0; AlarmAudioOwnership.resetForTests() }
 
     @Test fun denialRecordsContextAndTimingWithoutRetryingOrStartingAudio() {
         main.idleFor(Duration.ofSeconds(1)) // Keep the synthetic promotion timestamp non-negative.
@@ -53,7 +53,7 @@ class AudioFocusInstrumentationTest {
         }
         assertFalse(entry.contains("private-token"))
         assertFalse(entry.contains("content://"))
-        val focusRequest = audio.lastAudioFocusRequest.audioFocusRequest
+        val focusRequest = CountingAudio.request!!
         assertEquals(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT, focusRequest.focusGain)
         assertEquals(AudioAttributes.USAGE_ALARM, focusRequest.audioAttributes.usage)
         assertTrue(focusRequest.acceptsDelayedFocusGain())
@@ -102,8 +102,9 @@ class AudioFocusInstrumentationTest {
     class CountingAudio : ShadowAudioManager() {
         @Implementation override fun requestAudioFocus(request: android.media.AudioFocusRequest): Int {
             requests++
+            Companion.request = request
             return super.requestAudioFocus(request)
         }
-        companion object { var requests = 0 }
+        companion object { var requests = 0; var request: android.media.AudioFocusRequest? = null }
     }
 }

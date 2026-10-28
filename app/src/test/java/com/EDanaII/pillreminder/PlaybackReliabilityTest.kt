@@ -11,6 +11,7 @@ import android.os.Looper
 import android.os.Vibrator
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -23,6 +24,7 @@ import java.time.Duration
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class PlaybackReliabilityTest {
+    @Before fun resetOwnership() { AlarmAudioOwnership.resetForTests() }
     private val context: Context get() = RuntimeEnvironment.getApplication()
     private val main get() = shadowOf(Looper.getMainLooper())
     private fun request() = AlarmPlaybackRequest(AlarmOccurrence(1, 100, "token", false, "r"),

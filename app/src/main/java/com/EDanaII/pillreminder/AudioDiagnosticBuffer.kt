@@ -10,25 +10,28 @@ import java.time.Instant
 /** Temporary diagnostics only. No reminder database, backup, external storage, or permissions. */
 internal object AudioDiagnosticBuffer {
     const val LIMIT = 200
-    private val events = setOf("REMINDER_SAVED", "PLAYBACK_REQUEST", "PICKER_RESULT", "PICKER_GRANT",
+    private val events = setOf("AUDIO_OWNER", "FALLBACK_POST", "FALLBACK_CANCEL", "FALLBACK_SOUND",
+        "DIAGNOSTIC_SCHEDULE", "DIAGNOSTIC_POST", "DIAGNOSTIC_CANCEL",
+        "REMINDER_SAVED", "PLAYBACK_REQUEST", "PICKER_RESULT", "PICKER_GRANT",
         "PLAYBACK_BEGIN", "PLAYBACK_EXHAUSTED", "CANDIDATE_ATTEMPT", "CANDIDATE_FAILED",
         "CANDIDATE_PREPARED", "PLAYBACK_DEADLINE", "CANDIDATE_STARTED", "CANDIDATE_TIMEOUT",
         "FOCUS_REQUEST", "FOCUS_CHANGE", "PLAYBACK_STOP", "PLAYBACK_FAILURE", "SERVICE_REQUEST", "SERVICE_START", "REGISTRATION")
     private val categories = mapOf(
+        "owner" to setOf("APPLICATION", "NOTIFICATION", "STOPPED"),
         "serviceState" to setOf("UNKNOWN", "CREATED", "PROMOTED", "PROMOTION_FAILED", "STOP_REQUESTED", "DESTROYED"),
         "interactive" to setOf("true", "false", "unknown"),
         "keyguardLocked" to setOf("true", "false", "unknown"),
         "credentialUnlocked" to setOf("true", "false", "unknown"),
         "status" to setOf("FAILED", "ACCEPTED", "STARTED", "REGISTERED", "RETRY"),
         "kind" to setOf("DOSE", "TEST", "NAG"),
-        "reason" to setOf("REPLACED", "DISMISSED", "TIMEOUT", "SERVICE_DESTROYED", "FOREGROUND_FAILED", "PREPARATION", "NOTIFICATIONS_BLOCKED"),
+        "reason" to setOf("VIBRATION", "CANCELED", "REPLACED", "DISMISSED", "TIMEOUT", "SERVICE_DESTROYED", "FOREGROUND_FAILED", "PREPARATION", "NOTIFICATIONS_BLOCKED"),
         "selection" to setOf("NULL", "DEFAULT", "CUSTOM"),
         "source" to setOf("CUSTOM", "SYSTEM_DEFAULT", "PACKAGED_FALLBACK"),
         "stage" to setOf("CREATE_PLAYER", "AUDIO_ATTRIBUTES", "SET_DATA_SOURCE", "SET_LOOPING",
             "SET_GAIN", "SET_LISTENERS", "PREPARE_ASYNC", "NATIVE_CUTOFF", "START", "PLAYING"),
         "persistRead" to setOf("SUCCESS", "FAILED"))
     private val booleans = setOf("test", "unlocked", "escalation", "readGrant", "persistableGrant",
-        "canceled", "selectionUnchanged")
+        "canceled", "selectionUnchanged", "soundEnabled")
 
     // Fail closed if a future caller accidentally supplies private text or adds a new field.
     private fun safe(message: String): Boolean {
@@ -44,7 +47,7 @@ internal object AudioDiagnosticBuffer {
                 key in booleans -> value == "true" || value == "false"
                 key in setOf("id", "level", "mediaErrorWhat", "mediaErrorExtra", "change", "result",
                     "attempt", "requestAtMs", "callMs", "burstAgeMs", "startId", "fgsType", "sincePromotionMs",
-                    "importance", "pid", "uid", "sdk", "targetSdk") -> value.matches(Regex("-?[0-9]{1,19}"))
+                    "importance", "pid", "uid", "sdk", "targetSdk", "atMs") -> value.matches(Regex("-?[0-9]{1,19}"))
                 key == "gain" -> value in setOf("0.25", "0.5", "0.75", "1.0")
                 key == "run" -> value.matches(Regex("[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}"))
                 key == "exception" || key == "causeType" -> value == "NONE" ||

@@ -187,6 +187,13 @@ fun AlarmPermissionsSection(activity: ComponentActivity) {
             }
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = {
+                diagnosticStatus = NotificationAudioExperiment.schedule(activity)
+            }) { Text("Diagnostic: system alarm audio in 1 minute") }
+            TextButton(onClick = {
+                NotificationAudioExperiment.cancel(activity)
+                diagnosticStatus = "Diagnostic notification test canceled."
+            }) { Text("Cancel diagnostic notification test") }
+            TextButton(onClick = {
                 diagnosticStatus = try {
                     AudioDiagnosticBuffer.copy(activity)
                     "Audio diagnostics copied. Paste them into ChatGPT."

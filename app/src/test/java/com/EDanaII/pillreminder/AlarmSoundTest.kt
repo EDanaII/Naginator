@@ -8,6 +8,7 @@ import android.os.Looper
 import android.os.Vibrator
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -21,6 +22,7 @@ import java.io.IOException
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class AlarmSoundTest {
+    @Before fun resetOwnership() { AlarmAudioOwnership.resetForTests() }
     private val context: Context get() = RuntimeEnvironment.getApplication()
 
     private fun diagnostics() = ShadowLog.getLogsForTag(AlarmSoundDiagnostics.TAG).joinToString("\n") { it.msg }
@@ -166,7 +168,7 @@ class AlarmSoundTest {
             100, 2, null, false, true, true)
         output.start(request)
         assertFalse(vibrator.isVibrating)
-        output.start(request.copy(vibration = true))
+        output.start(request.copy(vibration = true, alertAt = 101))
         assertTrue(vibrator.isVibrating)
         assertArrayEquals(AlertEscalation.finiteVibration(2), vibrator.pattern)
         assertEquals(30_000L, vibrator.pattern.sum())
@@ -175,7 +177,7 @@ class AlarmSoundTest {
         assertFalse(vibrator.isVibrating)
         assertTrue(vibrator.isCancelled)
         vibrator.setHasVibrator(false)
-        output.start(request.copy(vibration = true))
+        output.start(request.copy(vibration = true, alertAt = 102))
         assertFalse(vibrator.isVibrating)
         output.stop()
     }

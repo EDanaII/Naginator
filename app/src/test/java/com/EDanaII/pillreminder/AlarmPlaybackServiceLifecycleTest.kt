@@ -36,6 +36,7 @@ class AlarmPlaybackServiceLifecycleTest {
     private var destroyed = false
 
     @Before fun setUp() {
+        AlarmAudioOwnership.resetForTests()
         ServiceControl.failPromotion = false
         ServiceControl.systemLatestStart = 0
         ServiceControl.stopAttempts.clear()
@@ -81,6 +82,20 @@ class AlarmPlaybackServiceLifecycleTest {
         assertEquals(2, shadowOf(service).stopSelfResultId)
         assertTrue(shadowOf(service).isForegroundStopped)
         assertTrue(AudioDiagnosticBuffer.export(context).contains("SERVICE_START status=FAILED"))
+    }
+
+    @Test fun promotionFailureFallsBackOutstandingBurstOnlyOnce() {
+        val request = playback("failed")
+        AlarmAudioOwnership.register(context, request)
+        ServiceControl.systemLatestStart = 2
+        ServiceControl.failPromotion = true
+        service.onStartCommand(intent("failed"), 0, 1)
+        service.onStartCommand(intent("failed"), 0, 2)
+        val notifications = context.getSystemService(android.app.NotificationManager::class.java)
+        assertEquals(1, notifications.activeNotifications.count { it.tag.startsWith("fallback:") })
+        assertEquals(1, AudioDiagnosticBuffer.export(context).lines().count { it.contains("FALLBACK_POST status=ACCEPTED") })
+        AlarmNotifications.cancel(context, 1, false, "failed")
+        assertFalse(notifications.activeNotifications.any { it.tag.startsWith("fallback:") })
     }
 
     @Test fun promotionFailureCancelsOutstandingPreparationButNewStartCanFinish() {

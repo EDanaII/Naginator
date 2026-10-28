@@ -11,6 +11,10 @@ import kotlinx.coroutines.launch
 /** Explicit immutable PendingIntents only; this receiver is not exported. */
 class MedicationAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == NotificationAudioExperiment.FIRE || intent.action == NotificationAudioExperiment.DISMISS) {
+            NotificationAudioExperiment.receive(context, intent)
+            return
+        }
         if (intent.action != AlarmCoordinator.ACTION_FIRE &&
             intent.action != AlarmCoordinator.ACTION_NAG &&
             intent.action != AlarmCoordinator.ACTION_DISMISS) return
@@ -21,7 +25,9 @@ class MedicationAlarmReceiver : BroadcastReceiver() {
             try {
                 val coordinator = AlarmCoordinator(context)
                 if (intent.action == AlarmCoordinator.ACTION_DISMISS) {
-                    coordinator.dismiss(occurrence.reminderId, occurrence.test, occurrence.token)
+                    coordinator.dismiss(occurrence.reminderId, occurrence.test, occurrence.token,
+                        if (intent.hasExtra(AlarmNotificationAudio.EXTRA_ALERT_AT))
+                            intent.getLongExtra(AlarmNotificationAudio.EXTRA_ALERT_AT, 0) else null)
                 } else if (intent.action == AlarmCoordinator.ACTION_NAG) {
                     coordinator.nag(occurrence, intent.getLongExtra(AlarmCoordinator.EXTRA_NAG_TIME, 0))
                 } else {

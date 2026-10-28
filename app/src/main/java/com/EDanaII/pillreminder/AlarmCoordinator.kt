@@ -254,7 +254,7 @@ class AlarmCoordinator(
         }
         try {
             AlarmNotifications.show(context, reminder, expected)
-            requestPlayback(context, expected.token, state.lastAlertTime)
+            startAudio(reminder, state)
             true
         } catch (exception: SecurityException) {
             Log.w(TAG, "Initial alert suppressed id=${incoming.reminderId} test=${incoming.test}: " +
@@ -278,13 +278,14 @@ class AlarmCoordinator(
         ActiveAlarm(reminder, occurrence)
     }
 
-    suspend fun dismiss(id: Long, test: Boolean, token: String) = lock.withLock {
+    suspend fun dismiss(id: Long, test: Boolean, token: String, expectedAlertAt: Long? = null) = lock.withLock {
         if (DirectBootAlarmStore.isUnlocked(context)) reconcileDefinitions()
         upgradeActiveStates()
         val state = activeStates().firstOrNull {
             it.occurrence.reminderId == id && it.occurrence.test == test && it.occurrence.token == token
         }
         if (state != null) {
+            if (expectedAlertAt != null && state.lastAlertTime != expectedAlertAt) return@withLock
             check(preferences.edit().remove(activeKey(token)).commit())
             cancelNag(state)
             AlarmNotifications.cancel(context, id, test, token)
@@ -341,8 +342,19 @@ class AlarmCoordinator(
                 "playback skipped, advanced active state retained", exception)
             throw exception
         }
-        requestPlayback(context, incoming.token, now)
+        startAudio(reminder, updated)
         true
+    }
+
+    private fun startAudio(reminder: Reminder, state: NagState) {
+        val request = AlarmPlaybackRequest(state.occurrence, state.lastAlertTime, state.level,
+            reminder.alarmSoundUri, reminder.vibrationEnabled,
+            state.occurrence.forceEscalation || reminder.escalationEnabled,
+            DirectBootAlarmStore.isUnlocked(context), reminder)
+        if (!AlarmAudioOwnership.register(context, request)) return
+        val accepted = try { requestPlayback(context, request.token, request.alertAt) }
+            catch (_: RuntimeException) { false }
+        if (!accepted) AlarmAudioOwnership.fallback(context, request, serviceUnavailable = true)
     }
 
     internal suspend fun playback(token: String, alertAt: Long): AlarmPlaybackRequest? = lock.withLock {

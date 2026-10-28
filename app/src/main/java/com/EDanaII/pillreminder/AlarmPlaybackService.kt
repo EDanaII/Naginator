@@ -101,6 +101,7 @@ class AlarmPlaybackService : Service() {
             // this batch of work; the lifetime scope must stay usable until onDestroy.
             scope.coroutineContext.cancelChildren()
             controller.shutdown("FOREGROUND_FAILED")
+            AlarmAudioOwnership.failedStarts(this)
             stopIfIdle()
             return START_NOT_STICKY
         }
@@ -120,6 +121,7 @@ class AlarmPlaybackService : Service() {
                 throw cancelled
             } catch (exception: Exception) {
                 AlarmSoundDiagnostics.event(this@AlarmPlaybackService, "PLAYBACK_FAILURE reason=PREPARATION")
+                output.failedStart(token, at)
                 Log.w("MedicationAlarm", "Unable to prepare alarm playback", exception)
             }
         }
@@ -204,6 +206,7 @@ internal class AndroidOutput(private val context: Context,
 
     private fun focusChanged(change: Int, expectedGeneration: Int) {
         if (request == null || focusGeneration != expectedGeneration) return
+        if (!AlarmAudioOwnership.isApplication(request!!)) return
         AlarmSoundDiagnostics.event(context, "FOCUS_CHANGE change=$change run=$focusRun")
         when (change) {
             AudioManager.AUDIOFOCUS_GAIN -> if (resumeOnGain) {
@@ -224,13 +227,37 @@ internal class AndroidOutput(private val context: Context,
 
     private fun playRemaining() {
         val current = request ?: return
+        if (!AlarmAudioOwnership.isApplication(current)) return
         val remaining = deadline - SystemClock.elapsedRealtime()
-        if (remaining > 0) sound.play(current.soundUri,
-            AlertEscalation.level(current.level, current.escalation).gain, current.unlocked, remaining)
+        val generation = focusGeneration
+        if (remaining > 0) try {
+            sound.play(current.soundUri,
+                AlertEscalation.level(current.level, current.escalation).gain, current.unlocked, remaining) {
+                if (request === current && focusGeneration == generation) notificationFallback()
+            }
+        } catch (_: RuntimeException) { notificationFallback() }
+    }
+
+    private fun notificationFallback() {
+        val current = request ?: return
+        if (!AlarmAudioOwnership.isApplication(current)) return
+        // Release application output before asking Android to sound a notification.
+        resumeOnGain = false
+        focusGeneration++
+        sound.stop()
+        focus?.let { audio.abandonAudioFocusRequest(it) }
+        focus = null
+        AlarmAudioOwnership.fallback(context, current)
+    }
+
+    fun failedStart(token: String, at: Long) {
+        if (request?.let { it.token == token && it.alertAt == at } == true) notificationFallback()
+        else AlarmAudioOwnership.failedStarts(context, token, at)
     }
 
     override fun start(request: AlarmPlaybackRequest) {
         stop()
+        if (!AlarmAudioOwnership.application(context, request)) return
         this.request = request
         focusRun = AlarmSoundDiagnostics.nextRun()
         deadline = SystemClock.elapsedRealtime() + AlertEscalation.BURST_MS
@@ -250,21 +277,35 @@ internal class AndroidOutput(private val context: Context,
                 diagnosticContext(requestAtMs, deadline - AlertEscalation.BURST_MS))
             resumeOnGain = result == AudioManager.AUDIOFOCUS_REQUEST_DELAYED
             if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) playRemaining()
+            else if (result == AudioManager.AUDIOFOCUS_REQUEST_FAILED) notificationFallback()
+            else if (result == AudioManager.AUDIOFOCUS_REQUEST_DELAYED) {
+                // Delayed acceptance is not a guarantee that a gain callback will arrive.
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (this.request === request && focusGeneration == expectedGeneration && resumeOnGain)
+                        notificationFallback()
+                }, 10_000L)
+            }
         } catch (exception: RuntimeException) {
             AlarmSoundDiagnostics.event(context, "FOCUS_REQUEST status=FAILED run=$focusRun " +
                 diagnosticContext(requestAtMs, deadline - AlertEscalation.BURST_MS))
             Log.w("MedicationAlarm", "Audio focus request failed; configured vibration remains eligible", exception)
+            notificationFallback()
         }
         if (request.vibration && vibrator?.hasVibrator() == true) {
             // A finite hardware waveform also stops if Doze suspends our cleanup callback.
-            vibrator.vibrate(VibrationEffect.createWaveform(
-                AlertEscalation.finiteVibration(request.level, request.escalation), -1), attributes)
+            try {
+                vibrator.vibrate(VibrationEffect.createWaveform(
+                    AlertEscalation.finiteVibration(request.level, request.escalation), -1), attributes)
+            } catch (_: RuntimeException) {
+                AlarmSoundDiagnostics.event(context, "PLAYBACK_FAILURE reason=VIBRATION")
+            }
         }
     }
 
     override fun stop() = stop("REPLACED")
 
     override fun stop(reason: String) {
+        if (reason != "FOREGROUND_FAILED") request?.let { AlarmAudioOwnership.stop(context, it, reason) }
         if (request != null) AlarmSoundDiagnostics.event(context, "PLAYBACK_STOP reason=$reason run=$focusRun")
         focusRun = null
         request = null

@@ -41,7 +41,8 @@ internal class LoopingAlarmSound(private val context: Context,
     private val handler = Handler(Looper.getMainLooper())
     private var preparationTimeout: Runnable? = null
 
-    fun play(selected: String?, gain: Float, unlocked: Boolean, durationMs: Long = AlertEscalation.BURST_MS) {
+    fun play(selected: String?, gain: Float, unlocked: Boolean, durationMs: Long = AlertEscalation.BURST_MS,
+        exhausted: () -> Unit = {}) {
         stop()
         val epoch = generation
         val deadline = SystemClock.elapsedRealtime() + durationMs.coerceIn(0, AlertEscalation.BURST_MS)
@@ -54,6 +55,7 @@ internal class LoopingAlarmSound(private val context: Context,
             if (SystemClock.elapsedRealtime() >= deadline) return
             if (index >= candidates.size) {
                 AlarmSoundDiagnostics.event(context, "PLAYBACK_EXHAUSTED run=$run gain=$gain")
+                exhausted()
                 return
             }
             val source = when (candidates[index]) {

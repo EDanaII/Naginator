@@ -78,7 +78,7 @@ object AlarmNotifications {
                 .putExtra(AlarmCoordinator.EXTRA_OCCURRENCE, identityPayload),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .withNaggyIcons(context)
             .setContentTitle((if (occurrence.test) "Test: " else "") + title)
             .setContentText(instructions)
             .setStyle(Notification.BigTextStyle().bigText(instructions))

@@ -72,7 +72,7 @@ internal object AlarmNotificationAudio {
             val left = expires - SystemClock.elapsedRealtime()
             if (left <= 0) return
             manager.notify(tag(request), 2, Notification.Builder(context, channelId)
-                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                .withNaggyIcons(context)
                 .setContentTitle("Medication alarm audio")
                 .setContentText("Open the reminder or dismiss this alarm.")
                 .setCategory(Notification.CATEGORY_ALARM).setVisibility(Notification.VISIBILITY_PRIVATE)

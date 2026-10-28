@@ -89,7 +89,7 @@ class AlarmPlaybackService : Service() {
             manager.createNotificationChannel(NotificationChannel("alarm_playback", "Alarm playback",
                 NotificationManager.IMPORTANCE_LOW).apply { setSound(null, null); enableVibration(false) })
             startForeground(99, Notification.Builder(this, "alarm_playback")
-                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm).setContentTitle("Medication alert")
+                .withNaggyIcons(this).setContentTitle("Medication alert")
                 .setContentText("Alarm sound and vibration stop after 30 seconds.").setOngoing(true).build())
             promotedAtMs = SystemClock.elapsedRealtime()
             diagnosticServiceState = "PROMOTED"

@@ -95,7 +95,7 @@ internal object NotificationAudioExperiment {
             }
             val dismiss = operation(context, DISMISS, token)
             val notification = Notification.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                .withNaggyIcons(context)
                 .setContentTitle("Diagnostic: Android-managed alarm audio")
                 .setContentText("System alarm sound, once. Not a medication reminder.")
                 .setCategory(Notification.CATEGORY_ALARM)

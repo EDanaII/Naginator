@@ -10,6 +10,7 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Handler
+import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
@@ -36,6 +37,8 @@ class AlarmPlaybackService : Service() {
     private val preparations = mutableSetOf<Job>()
     private var destroyed = false
     private var latestStartId = 0
+    private var diagnosticServiceState = "CREATED"
+    private var promotedAtMs = -1L
     internal var preparePlayback: suspend (String, Long) -> AlarmPlaybackRequest? = { token, at ->
         AlarmCoordinator(applicationContext).playback(token, at)
     }
@@ -43,7 +46,11 @@ class AlarmPlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        output = AndroidOutput(this)
+        output = AndroidOutput(this, serviceSnapshot = {
+            FocusServiceSnapshot(diagnosticServiceState, promotedAtMs,
+                if (Build.VERSION.SDK_INT >= 29) try { foregroundServiceType } catch (_: RuntimeException) { -1 }
+                else -1, latestStartId)
+        })
         val presentingOutput = object : AlarmBurstController.Output {
             override fun start(request: AlarmPlaybackRequest) {
                 if (!AlarmNotifications.canNotify(this@AlarmPlaybackService)) {
@@ -84,7 +91,10 @@ class AlarmPlaybackService : Service() {
             startForeground(99, Notification.Builder(this, "alarm_playback")
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm).setContentTitle("Medication alert")
                 .setContentText("Alarm sound and vibration stop after 30 seconds.").setOngoing(true).build())
+            promotedAtMs = SystemClock.elapsedRealtime()
+            diagnosticServiceState = "PROMOTED"
         } catch (exception: RuntimeException) {
+            diagnosticServiceState = "PROMOTION_FAILED"
             AlarmSoundDiagnostics.event(this, "SERVICE_START status=FAILED")
             Log.w("MedicationAlarm", "Foreground promotion failed; medication notification remains available", exception)
             // stopSelfResult may retain this instance for a newer queued start. Cancel only
@@ -128,12 +138,16 @@ class AlarmPlaybackService : Service() {
     private fun stopIfIdle() {
         if (!destroyed && preparations.isEmpty() && controller.current == null) {
             // Do not stop a newer alarm command already pending in Android's service dispatcher.
-            if (stopSelfResult(latestStartId)) stopForeground(STOP_FOREGROUND_REMOVE)
+            if (stopSelfResult(latestStartId)) {
+                diagnosticServiceState = "STOP_REQUESTED"
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            }
         }
     }
 
     override fun onDestroy() {
         destroyed = true
+        diagnosticServiceState = "DESTROYED"
         if (instance === this) instance = null
         scope.cancel()
         preparations.clear()
@@ -173,11 +187,13 @@ class AlarmPlaybackService : Service() {
 }
 
 internal class AndroidOutput(private val context: Context,
-    private val sound: LoopingAlarmSound = LoopingAlarmSound(context)) : AlarmBurstController.Output {
+    private val sound: LoopingAlarmSound = LoopingAlarmSound(context),
+    private val serviceSnapshot: () -> FocusServiceSnapshot = { FocusServiceSnapshot() }) : AlarmBurstController.Output {
     private var request: AlarmPlaybackRequest? = null
     private var deadline = 0L
     private var resumeOnGain = false
     private var focusGeneration = 0
+    private var focusRun: String? = null
     private val audio = context.getSystemService(AudioManager::class.java)
     private val vibrator = context.getSystemService(Vibrator::class.java)
     private val wake = context.getSystemService(PowerManager::class.java)
@@ -188,7 +204,7 @@ internal class AndroidOutput(private val context: Context,
 
     private fun focusChanged(change: Int, expectedGeneration: Int) {
         if (request == null || focusGeneration != expectedGeneration) return
-        AlarmSoundDiagnostics.event(context, "FOCUS_CHANGE change=$change")
+        AlarmSoundDiagnostics.event(context, "FOCUS_CHANGE change=$change run=$focusRun")
         when (change) {
             AudioManager.AUDIOFOCUS_GAIN -> if (resumeOnGain) {
                 resumeOnGain = false
@@ -216,6 +232,7 @@ internal class AndroidOutput(private val context: Context,
     override fun start(request: AlarmPlaybackRequest) {
         stop()
         this.request = request
+        focusRun = AlarmSoundDiagnostics.nextRun()
         deadline = SystemClock.elapsedRealtime() + AlertEscalation.BURST_MS
         wake.acquire(AlertEscalation.BURST_MS + 1_000)
         val expectedGeneration = focusGeneration
@@ -224,13 +241,18 @@ internal class AndroidOutput(private val context: Context,
             .setOnAudioFocusChangeListener({ change -> focusChanged(change, expectedGeneration) }, Handler(Looper.getMainLooper()))
             .build()
         focus = nextFocus
+        val diagnosticContext = AudioFocusDiagnostics.capture(context, serviceSnapshot)
+        val requestAtMs = SystemClock.elapsedRealtime()
         try {
             val result = audio.requestAudioFocus(nextFocus)
-            AlarmSoundDiagnostics.event(context, "FOCUS_REQUEST result=$result")
+            AlarmSoundDiagnostics.event(context, "FOCUS_REQUEST result=$result run=$focusRun " +
+                "id=${request.occurrence.reminderId} test=${request.occurrence.test} " +
+                diagnosticContext(requestAtMs, deadline - AlertEscalation.BURST_MS))
             resumeOnGain = result == AudioManager.AUDIOFOCUS_REQUEST_DELAYED
             if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) playRemaining()
         } catch (exception: RuntimeException) {
-            AlarmSoundDiagnostics.event(context, "FOCUS_REQUEST status=FAILED")
+            AlarmSoundDiagnostics.event(context, "FOCUS_REQUEST status=FAILED run=$focusRun " +
+                diagnosticContext(requestAtMs, deadline - AlertEscalation.BURST_MS))
             Log.w("MedicationAlarm", "Audio focus request failed; configured vibration remains eligible", exception)
         }
         if (request.vibration && vibrator?.hasVibrator() == true) {
@@ -243,7 +265,8 @@ internal class AndroidOutput(private val context: Context,
     override fun stop() = stop("REPLACED")
 
     override fun stop(reason: String) {
-        if (request != null) AlarmSoundDiagnostics.event(context, "PLAYBACK_STOP reason=$reason")
+        if (request != null) AlarmSoundDiagnostics.event(context, "PLAYBACK_STOP reason=$reason run=$focusRun")
+        focusRun = null
         request = null
         focusGeneration++
         resumeOnGain = false

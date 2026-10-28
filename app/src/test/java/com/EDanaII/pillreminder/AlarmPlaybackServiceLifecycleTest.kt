@@ -208,6 +208,9 @@ class AlarmPlaybackServiceLifecycleTest {
         ServiceControl.failPromotion = false
         service.onStartCommand(intent("replacement"), 0, 3)
         awaitCondition("Replacement burst never started") { vibrator.isVibrating }
+        val focusDiagnostics = AudioDiagnosticBuffer.export(context).lines().filter { it.contains("FOCUS_REQUEST") }
+        assertTrue(focusDiagnostics.first().contains("serviceState=PROMOTED startId=1"))
+        assertTrue(focusDiagnostics.last().contains("serviceState=PROMOTED startId=3"))
         main.idleFor(Duration.ofSeconds(20))
         assertTrue("Old timeout stopped the newer burst", vibrator.isVibrating)
         assertFalse(shadowOf(service).isStoppedBySelf)

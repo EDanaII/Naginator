@@ -9,6 +9,7 @@ import android.media.AudioManager
 import android.media.RingtoneManager
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -18,6 +19,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class NotificationAudioExperimentTest {
+    @Before fun enableDiagnostics() {
+        DeveloperSettings.setEnabled(context, true)
+        DeveloperSettings.setDetailed(context, true)
+    }
     private val context: Context get() = RuntimeEnvironment.getApplication()
     private val manager get() = context.getSystemService(NotificationManager::class.java)
     private val alarms get() = shadowOf(context.getSystemService(AlarmManager::class.java))

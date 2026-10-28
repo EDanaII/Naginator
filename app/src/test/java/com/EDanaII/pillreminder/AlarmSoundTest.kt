@@ -22,7 +22,11 @@ import java.io.IOException
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class AlarmSoundTest {
-    @Before fun resetOwnership() { AlarmAudioOwnership.resetForTests() }
+    @Before fun resetOwnership() {
+        AlarmAudioOwnership.resetForTests()
+        DeveloperSettings.setEnabled(context, true)
+        DeveloperSettings.setDetailed(context, true)
+    }
     private val context: Context get() = RuntimeEnvironment.getApplication()
 
     private fun diagnostics() = ShadowLog.getLogsForTag(AlarmSoundDiagnostics.TAG).joinToString("\n") { it.msg }

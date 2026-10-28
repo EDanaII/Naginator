@@ -16,13 +16,15 @@ internal object AlarmSoundDiagnostics {
         else -> "CUSTOM"
     }
     fun event(context: Context, message: String) {
-        Log.i(TAG, message)
-        AudioDiagnosticBuffer.record(context, message)
+        val retained = DiagnosticLogging.retained(context, message) ?: return
+        Log.i(TAG, retained)
+        AudioDiagnosticBuffer.record(context, retained)
     }
     fun failure(context: Context, message: String, exception: Exception) {
         // Exception messages and causes can contain content URIs and private filenames.
         val sanitized = "$message exception=${exception.javaClass.name} causeType=${exception.cause?.javaClass?.name ?: "NONE"}"
-        Log.w(TAG, sanitized)
-        AudioDiagnosticBuffer.record(context, sanitized)
+        val retained = DiagnosticLogging.retained(context, sanitized) ?: return
+        Log.w(TAG, retained)
+        AudioDiagnosticBuffer.record(context, retained)
     }
 }

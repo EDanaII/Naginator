@@ -45,7 +45,6 @@ fun AlarmPermissionsSection(activity: ComponentActivity) {
     var status by remember(activity) { mutableStateOf(AlarmPermissions.read(activity)) }
     var showRationale by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
-    var diagnosticStatus by remember { mutableStateOf<String?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
     var notificationRationale by remember(activity) {
         mutableStateOf(Build.VERSION.SDK_INT >= 33 &&
@@ -185,23 +184,6 @@ fun AlarmPermissionsSection(activity: ComponentActivity) {
                     }
                 }) { Text("Full-screen alert settings") }
             }
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = {
-                diagnosticStatus = NotificationAudioExperiment.schedule(activity)
-            }) { Text("Diagnostic: system alarm audio in 1 minute") }
-            TextButton(onClick = {
-                NotificationAudioExperiment.cancel(activity)
-                diagnosticStatus = "Diagnostic notification test canceled."
-            }) { Text("Cancel diagnostic notification test") }
-            TextButton(onClick = {
-                diagnosticStatus = try {
-                    AudioDiagnosticBuffer.copy(activity)
-                    "Audio diagnostics copied. Paste them into ChatGPT."
-                } catch (_: Exception) {
-                    "Could not copy audio diagnostics. Please try again."
-                }
-            }) { Text("Copy audio diagnostics") }
-            diagnosticStatus?.let { Text(it) }
             if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
         }
     }

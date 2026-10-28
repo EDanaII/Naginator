@@ -16,6 +16,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -28,6 +29,11 @@ import java.util.concurrent.TimeUnit
 class AudioDiagnosticBufferTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val context: Context get() = compose.activity
+
+    @Before fun enableDiagnostics() {
+        DeveloperSettings.setEnabled(context, true)
+        DeveloperSettings.setDetailed(context, true)
+    }
 
     @Test fun retentionDropsOldestEventsInOrder() {
         for (id in 1..205) AudioDiagnosticBuffer.record(context, "REMINDER_SAVED id=$id selection=NULL")
@@ -81,11 +87,10 @@ class AudioDiagnosticBufferTest {
         assertFalse(raw.contains("SecretMedication"))
     }
 
-    @Test fun permissionsActionCopiesAndConfirmsEvenWhenBufferIsEmpty() {
+    @Test fun developerActionCopiesAndConfirmsEvenWhenBufferIsEmpty() {
         compose.setContent { MaterialTheme {
-            Column(Modifier.verticalScroll(rememberScrollState())) { AlarmPermissionsSection(compose.activity) }
+            Column(Modifier.verticalScroll(rememberScrollState())) { AboutNaginatorSection() }
         } }
-        compose.onNodeWithText("Permissions", useUnmergedTree = true).performClick()
         compose.onNodeWithText("Copy audio diagnostics").performScrollTo().performClick()
         compose.onNodeWithText("Audio diagnostics copied. Paste them into ChatGPT.").performScrollTo().assertIsDisplayed()
         val text = context.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString()

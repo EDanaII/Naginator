@@ -32,7 +32,12 @@ class AudioFocusInstrumentationTest {
     private fun request() = AlarmPlaybackRequest(AlarmOccurrence(7, 100, "private-token", false, "r"),
         100, 0, "content://private/tone", true, true, true)
 
-    @Before fun setUp() { CountingAudio.requests = 0; AlarmAudioOwnership.resetForTests() }
+    @Before fun setUp() {
+        CountingAudio.requests = 0
+        AlarmAudioOwnership.resetForTests()
+        DeveloperSettings.setEnabled(context, true)
+        DeveloperSettings.setDetailed(context, true)
+    }
 
     @Test fun denialRecordsContextAndTimingWithoutRetryingOrStartingAudio() {
         main.idleFor(Duration.ofSeconds(1)) // Keep the synthetic promotion timestamp non-negative.

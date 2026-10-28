@@ -69,11 +69,12 @@ internal object AudioDiagnosticBuffer {
     // Serialize connections within this process; SQLite transactions also serialize other processes.
     @Synchronized fun record(context: Context, message: String) {
         if (!safe(message)) return
+        val retained = DiagnosticLogging.retained(context, message) ?: return
         try {
             database(context) { db ->
                 db.beginTransaction()
                 try {
-                    db.execSQL("INSERT INTO events(timestamp, message) VALUES (?, ?)", arrayOf<Any>(System.currentTimeMillis(), message))
+                    db.execSQL("INSERT INTO events(timestamp, message) VALUES (?, ?)", arrayOf<Any>(System.currentTimeMillis(), retained))
                     db.execSQL("DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT $LIMIT)")
                     db.setTransactionSuccessful()
                 } finally { db.endTransaction() }

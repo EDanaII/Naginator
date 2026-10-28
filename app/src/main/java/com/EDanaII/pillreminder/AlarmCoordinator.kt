@@ -100,7 +100,7 @@ class AlarmCoordinator(
                 reminder.vibrationEnabled, reminder.escalationEnabled) == 1)
             reminder
         }
-        Log.i(TAG, "Saved id=${saved.id} edit=${reminder.id != 0L} enabled=${saved.enabled} " +
+        if (DeveloperSettings.read(context).detailed) Log.i(TAG, "Saved id=${saved.id} edit=${reminder.id != 0L} enabled=${saved.enabled} " +
             "start=${saved.startTimeMillis} intervalHours=${saved.doseIntervalHours}")
         AlarmSoundDiagnostics.event(context, "REMINDER_SAVED id=${saved.id} selection=${AlarmSoundDiagnostics.selection(saved.alarmSoundUri)}")
         cancelAll(saved.id)
@@ -199,7 +199,7 @@ class AlarmCoordinator(
         val definition = runtime.definition(incoming.reminderId)
         val reminder = if (DirectBootAlarmStore.isUnlocked(context)) reminderDao.findById(incoming.reminderId)
             else definition?.genericReminder()
-        Log.i(TAG, "Received id=${incoming.reminderId} test=${incoming.test} " +
+        if (DeveloperSettings.read(context).detailed) Log.i(TAG, "Received id=${incoming.reminderId} test=${incoming.test} " +
             "scheduled=${incoming.scheduledTime} received=$now")
         val rejection = when {
             expected == null || !sameIdentity(expected, incoming) -> "stale or unregistered occurrence"
@@ -442,7 +442,7 @@ class AlarmCoordinator(
         }
         return try {
             val next = DoseSchedule.next(reminder.startTimeMillis, reminder.doseIntervalHours, after)
-            Log.i(TAG, "Calculated id=${reminder.id} start=${reminder.startTimeMillis} " +
+            if (DeveloperSettings.read(context).detailed) Log.i(TAG, "Calculated id=${reminder.id} start=${reminder.startTimeMillis} " +
                 "after=$after next=$next")
             arm(occurrence(reminder, next, false))
         } catch (_: ArithmeticException) {

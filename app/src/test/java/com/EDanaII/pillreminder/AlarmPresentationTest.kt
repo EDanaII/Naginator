@@ -119,6 +119,7 @@ class AlarmPresentationTest {
     }
 
     @Test fun testControlsDistinguishPendingAndActive() {
+        DeveloperSettings.setEnabled(org.robolectric.RuntimeEnvironment.getApplication(), true)
         val state = mutableStateOf(AlarmUiState(pendingTests = listOf(occurrence)))
         var testTaps = 0
         var escalationTaps = 0

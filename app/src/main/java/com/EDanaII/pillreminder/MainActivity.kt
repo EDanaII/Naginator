@@ -175,6 +175,7 @@ fun ReminderListScreen(
     onCancelTest: (AlarmOccurrence) -> Unit = {}
 ) {
     var deleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val developerOptions = rememberDeveloperOptions()
     val reminderToDelete = reminders.firstOrNull { it.id == deleteId }
     if (reminderToDelete != null) {
         AlertDialog(
@@ -226,6 +227,7 @@ fun ReminderListScreen(
         }
 
         permissionsContent()
+        AboutNaginatorSection()
         if (alarmStatus != null) Text(alarmStatus)
 
         if (maintenanceError != null) {
@@ -277,18 +279,20 @@ fun ReminderListScreen(
                         Text("Cancel pending test")
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(modifier = Modifier.weight(1f), onClick = { onTest(reminder.id) },
-                        enabled = reminder.enabled && !isWorking && !testActive) {
-                        Text(when {
-                            testActive -> "Test active — dismiss first"
-                            pendingTest != null -> "Reschedule test in 1 minute"
-                            else -> "Test in 1 minute"
-                        })
-                    }
-                    TextButton(modifier = Modifier.weight(1f), onClick = { onTestEscalation(reminder.id) },
-                        enabled = reminder.enabled && !isWorking && !testActive) {
-                        Text("Test Escalation")
+                if (developerOptions.enabled) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(modifier = Modifier.weight(1f), onClick = { onTest(reminder.id) },
+                            enabled = reminder.enabled && !isWorking && !testActive) {
+                            Text(when {
+                                testActive -> "Test active — dismiss first"
+                                pendingTest != null -> "Reschedule test in 1 minute"
+                                else -> "Test in 1 minute"
+                            })
+                        }
+                        TextButton(modifier = Modifier.weight(1f), onClick = { onTestEscalation(reminder.id) },
+                            enabled = reminder.enabled && !isWorking && !testActive) {
+                            Text("Test Escalation")
+                        }
                     }
                 }
             }

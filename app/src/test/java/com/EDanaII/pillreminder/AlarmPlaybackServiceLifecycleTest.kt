@@ -36,6 +36,8 @@ class AlarmPlaybackServiceLifecycleTest {
     private var destroyed = false
 
     @Before fun setUp() {
+        DeveloperSettings.setEnabled(context, true)
+        DeveloperSettings.setDetailed(context, true)
         AlarmAudioOwnership.resetForTests()
         ServiceControl.failPromotion = false
         ServiceControl.systemLatestStart = 0

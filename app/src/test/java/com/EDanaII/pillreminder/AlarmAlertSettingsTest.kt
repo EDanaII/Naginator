@@ -17,6 +17,7 @@ import androidx.compose.ui.test.performClick
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
@@ -26,6 +27,10 @@ import org.robolectric.shadows.ShadowLog
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class AlarmAlertSettingsTest {
+    @Before fun enableDiagnostics() {
+        DeveloperSettings.setEnabled(org.robolectric.RuntimeEnvironment.getApplication(), true)
+        DeveloperSettings.setDetailed(org.robolectric.RuntimeEnvironment.getApplication(), true)
+    }
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test fun pickerUsesAlarmTonesAndReturnsSelectionAndSwitchesRetainState() {

@@ -28,6 +28,8 @@ class RecurringNagTest {
     private val store get() = DirectBootAlarmStore(context)
 
     @Before fun setUp() {
+        DeveloperSettings.setEnabled(RuntimeEnvironment.getApplication(), true)
+        DeveloperSettings.setDetailed(RuntimeEnvironment.getApplication(), true)
         context = RuntimeEnvironment.getApplication()
         shadowOf(context.getSystemService(UserManager::class.java)).setUserUnlocked(true)
         store.preferences.edit().clear().commit()

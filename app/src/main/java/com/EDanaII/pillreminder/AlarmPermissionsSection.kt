@@ -118,6 +118,17 @@ fun AlarmPermissionsSection(activity: ComponentActivity) {
         )
     }
 
+    if (!status.fullScreenAllowed) {
+        Text(
+            "Full-screen alarm access is off. Alarms may sound without waking the screen or displaying Dismiss.",
+            color = MaterialTheme.colorScheme.error
+        )
+        TextButton(onClick = {
+            openSettings(AlarmPermissions.fullScreenSettings(activity) ?: AlarmPermissions.appSettings(activity))
+        }) { Text("Enable full-screen alerts") }
+    }
+    if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
+
     TextButton(onClick = { expanded = !expanded }) {
         Text(if (expanded) "Hide permissions" else "Permissions")
     }
@@ -184,7 +195,6 @@ fun AlarmPermissionsSection(activity: ComponentActivity) {
                     }
                 }) { Text("Full-screen alert settings") }
             }
-            if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
         }
     }
 }

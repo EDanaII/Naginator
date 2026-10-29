@@ -47,10 +47,16 @@ internal object AlarmNotificationAudio {
                     .joinToString("") { "%02x".format(it) }.take(24)
             val systemVibration = serviceUnavailable && request.vibration
             val channelId = soundChannel + if (systemVibration) "_vibration" else ""
-            manager.createNotificationChannel(NotificationChannel(channelId,
-                if (channelId == DEFAULT_CHANNEL) "Medication audio fallback" else "Medication audio fallback: selected sound",
+            // Classify the sound before the vibration suffix, and distinguish selected-sound channels
+            // without exposing content URIs or medication-specific filenames in Settings.
+            val soundLabel = if (soundChannel == DEFAULT_CHANNEL) "system" else
+                "selected (${soundChannel.removePrefix("${DEFAULT_CHANNEL}_").take(8)})"
+            val channelName = "Alarm audio${if (systemVibration) " + vibration" else ""}: $soundLabel"
+            manager.createNotificationChannel(NotificationChannel(channelId, channelName,
                 NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Alarm audio when application playback is unavailable"
+                description = if (systemVibration)
+                    "Alarm sound and system vibration when the playback service cannot start."
+                else "Alarm sound when application playback cannot start. Vibration is handled separately."
                 setSound(uri, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
                 enableVibration(systemVibration) // Never duplicate live service vibration.

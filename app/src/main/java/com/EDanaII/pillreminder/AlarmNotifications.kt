@@ -23,9 +23,9 @@ object AlarmNotifications {
         val attributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
-        val channel = NotificationChannel(CHANNEL_ID, "Medication alarms",
+        val channel = NotificationChannel(CHANNEL_ID, "Medication alarms (presentation)",
             NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Scheduled medication alerts using the default alarm sound"
+            description = "Visual dose reminders and Dismiss controls. Alarm sound and vibration are handled separately."
             // Playback is owned by the bounded shared controller, not the notification channel.
             setSound(null, attributes)
             enableVibration(false)

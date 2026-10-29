@@ -86,8 +86,11 @@ class AlarmPlaybackService : Service() {
         latestStartId = startId
         try {
             val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel("alarm_playback", "Alarm playback",
-                NotificationManager.IMPORTANCE_LOW).apply { setSound(null, null); enableVibration(false) })
+            manager.createNotificationChannel(NotificationChannel("alarm_playback", "Alarm playback service",
+                NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Required while alarm sound or vibration is active. This status notification is silent."
+                setSound(null, null); enableVibration(false)
+            })
             startForeground(99, Notification.Builder(this, "alarm_playback")
                 .withNaggyIcons(this).setContentTitle("Medication alert")
                 .setContentText("Alarm sound and vibration stop after 30 seconds.").setOngoing(true).build())

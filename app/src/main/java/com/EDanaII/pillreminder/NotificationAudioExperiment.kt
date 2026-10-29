@@ -32,8 +32,8 @@ internal object NotificationAudioExperiment {
     private fun channel(context: Context): NotificationChannel {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL_ID,
-            "Diagnostic: system alarm audio", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "One-shot notification audio experiment; not medication reminders"
+            "Developer: system alarm test", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "Separate one-shot system alarm sound test. Not a medication dose or recurring nag."
             setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
                 AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())

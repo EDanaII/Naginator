@@ -95,6 +95,7 @@ object AlarmNotifications {
             }.build()
         context.getSystemService(NotificationManager::class.java)
             .notify(tag(occurrence.reminderId, occurrence.test, occurrence.token), 1, notification)
+        PresentationDiagnostics.notification(context, notification, occurrence, "ALARM")
     }
 
     fun cancel(context: Context, id: Long, test: Boolean, token: String? = null) {

@@ -71,14 +71,16 @@ internal object AlarmNotificationAudio {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val left = expires - SystemClock.elapsedRealtime()
             if (left <= 0) return
-            manager.notify(tag(request), 2, Notification.Builder(context, channelId)
+            val notification = Notification.Builder(context, channelId)
                 .withNaggyIcons(context)
                 .setContentTitle("Medication alarm audio")
                 .setContentText("Open the reminder or dismiss this alarm.")
                 .setCategory(Notification.CATEGORY_ALARM).setVisibility(Notification.VISIBILITY_PRIVATE)
                 .setContentIntent(open)
                 .setOnlyAlertOnce(true).setTimeoutAfter(left.coerceIn(1, AlertEscalation.BURST_MS))
-                .addAction(Notification.Action.Builder(null, "Dismiss", dismiss).build()).build())
+                .addAction(Notification.Action.Builder(null, "Dismiss", dismiss).build()).build()
+            manager.notify(tag(request), 2, notification)
+            PresentationDiagnostics.notification(context, notification, request.occurrence, "FALLBACK")
             val channel = manager.getNotificationChannel(channelId)
             AlarmSoundDiagnostics.event(context, "FALLBACK_POST status=ACCEPTED atMs=${request.alertAt} " +
                 "importance=${channel.importance} soundEnabled=${channel.sound != null}")

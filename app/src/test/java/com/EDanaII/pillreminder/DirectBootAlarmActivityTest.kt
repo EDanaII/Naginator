@@ -32,6 +32,8 @@ class DirectBootAlarmActivityTest {
 
     @Test fun lockedFullScreenContentAndDismissWorkWithoutRoomOrMedicationDetails() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
+        DeveloperSettings.setEnabled(context, true)
+        DeveloperSettings.setDetailed(context, true)
         val users = shadowOf(context.getSystemService(UserManager::class.java))
         users.setUserUnlocked(true)
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
@@ -76,6 +78,10 @@ class DirectBootAlarmActivityTest {
                 assertNull(coordinator.active(reminder.id, false, occurrence.token))
                 assertEquals(next, coordinator.scheduled(reminder.id, false))
                 assertTrue(context.getSystemService(NotificationManager::class.java).activeNotifications.isEmpty())
+                val presentationLog = AudioDiagnosticBuffer.export(context)
+                assertTrue(presentationLog.contains("ALARM_ACTIVITY lifecycle=CREATE id=${reminder.id} test=false"))
+                assertTrue(presentationLog.contains("ALARM_ACTIVITY lifecycle=RESUME id=${reminder.id} test=false"))
+                assertEquals(1, presentationLog.lines().count { it.contains("ALARM_ACTIVITY lifecycle=FINISH") })
             } finally {
                 controller.pause().stop().destroy()
             }

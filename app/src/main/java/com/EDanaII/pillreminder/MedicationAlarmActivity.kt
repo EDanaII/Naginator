@@ -37,9 +37,12 @@ class MedicationAlarmActivity : ComponentActivity() {
     private var active by mutableStateOf<ActiveAlarm?>(null)
     private var observation: Job? = null
     private var dismissing by mutableStateOf(false)
+    private var presentationFinishReason = "OTHER"
+    private var presentationFinishRecorded = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        PresentationDiagnostics.activity(this, "CREATE")
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
@@ -79,6 +82,7 @@ class MedicationAlarmActivity : ComponentActivity() {
                                                 alarm.reminder.id, alarm.occurrence.test,
                                                 alarm.occurrence.token)
                                         }
+                                        presentationFinishReason = "DISMISSED"
                                         finish()
                                     }
                                 }
@@ -93,9 +97,11 @@ class MedicationAlarmActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        PresentationDiagnostics.activity(this, "RESUME")
         val occurrence = intent.getStringExtra(AlarmCoordinator.EXTRA_OCCURRENCE)
             ?.let { AlarmCoordinator.decode(it) }
         if (occurrence == null) {
+            presentationFinishReason = "INVALID_OCCURRENCE"
             finish()
             return
         }
@@ -103,7 +109,10 @@ class MedicationAlarmActivity : ComponentActivity() {
         observation = lifecycleScope.launch {
             AlarmCoordinator(applicationContext).observeState().collect { state ->
                 active = state.activeAlarms.firstOrNull { it.occurrence.token == occurrence.token }
-                if (active == null) finish()
+                if (active == null) {
+                    presentationFinishReason = "NO_ACTIVE_OCCURRENCE"
+                    finish()
+                }
             }
         }
     }
@@ -112,5 +121,13 @@ class MedicationAlarmActivity : ComponentActivity() {
         observation?.cancel()
         observation = null
         super.onPause()
+    }
+
+    override fun finish() {
+        if (!presentationFinishRecorded) {
+            presentationFinishRecorded = true
+            PresentationDiagnostics.activity(this, "FINISH", presentationFinishReason)
+        }
+        super.finish()
     }
 }
